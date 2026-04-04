@@ -496,7 +496,8 @@ function generateAttendancePdfs(token, payload) {
     }
 
     try {
-      const existing = trackingIndex[matricule] || null;
+      const sessionDateStr = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      const existing = trackingIndex[matricule + '|' + sessionDateStr] || null;
       const pdfName = buildPdfName_(agent.prenom || agent.fullName, sessionDate);
       const sourceDocName = buildSourceDocName_(agent.fullName, sessionDate);
 
@@ -1234,8 +1235,10 @@ function getTrackingIndexByPeriod_(period) {
   data.forEach((row, i) => {
     const rowPeriod = String(row[1] || '').trim();
     const matricule = String(row[4] || '').trim();
+    const dateSession = String(row[2] || '').trim();
     if (rowPeriod === period && matricule) {
-      index[matricule] = mapTrackingRow_(row, i + 2);
+      const key = matricule + '|' + dateSession;
+      index[key] = mapTrackingRow_(row, i + 2);
     }
   });
   return index;
@@ -1504,11 +1507,13 @@ function sanitizeFileName_(str) {
 }
 
 function buildPdfName_(prenom, sessionDate) {
-  return 'PROD-ENR-004C-Feuille de présence - ' + sanitizeFileName_(prenom) + ' - ' + monthLabelFr_(sessionDate) + '.pdf';
+  var dateSuffix = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+  return 'PROD-ENR-004C-Feuille de présence - ' + sanitizeFileName_(prenom) + ' - ' + dateSuffix + '.pdf';
 }
 
 function buildSourceDocName_(fullName, sessionDate) {
-  return 'SRC - PROD-ENR-004C - ' + sanitizeFileName_(fullName) + ' - ' + monthLabelFr_(sessionDate);
+  var dateSuffix = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+  return 'SRC - PROD-ENR-004C - ' + sanitizeFileName_(fullName) + ' - ' + dateSuffix;
 }
 
 function appendLabeledLine_(body, label, placeholder) {
