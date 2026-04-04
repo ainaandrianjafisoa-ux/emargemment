@@ -276,6 +276,7 @@
 
     <div class="tabs">
       <button id="tabGenerate" class="tab active" onclick="switchTab('generate')">Génération</button>
+      <button id="tabImport" class="tab" onclick="switchTab('import')">Import en masse</button>
       <button id="tabDashboard" class="tab" onclick="switchTab('dashboard')">Dashboard</button>
       <button id="tabSignature" class="tab" onclick="switchTab('signature')">Signature</button>
       <button id="tabUsers" class="tab" onclick="switchTab('users')">Gestion users</button>
@@ -344,20 +345,59 @@
         <div id="results" class="results"></div>
       </div>
 
-      <div class="card glass-card" style="margin-top:16px;">
+    </section>
+
+    <section id="importSection" class="hidden">
+      <div class="grid grid-2">
+        <div class="card glass-card">
+          <div class="section-title"><h3>Informations communes</h3></div>
+          <p class="mini" style="margin-bottom:10px;">Ces champs seront appliqués à toutes les fiches générées. Seuls le matricule, la date de session et les thèmes varient par agent.</p>
+          <div class="grid grid-2">
+            <div>
+              <label>Intitulé de session/stage</label>
+              <input id="importIntitule" type="text" />
+            </div>
+            <div>
+              <label>Durée de la session/stage</label>
+              <input id="importDuree" type="text" />
+            </div>
+            <div>
+              <label>Lieu</label>
+              <input id="importLieu" type="text" />
+            </div>
+            <div>
+              <label>Modèle de thèmes (fallback)</label>
+              <select id="importThemeModel" onchange="applyImportThemeModel()">
+                <option value="">-- Aucun --</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:14px;">
+            <label>Remarques des intervenants</label>
+            <textarea id="importRemarques" style="min-height:80px;"></textarea>
+          </div>
+        </div>
+
+        <div class="card glass-card">
+          <div class="section-title"><h3>Données par agent</h3></div>
+          <p class="mini" style="margin-bottom:10px;">Colle ici les 3 colonnes : <strong>matricule ; date de session ; thèmes/sujets abordés</strong> (séparateur <code>;</code>). La ligne d'en-tête est ignorée si présente.</p>
+          <div>
+            <label>Contenu (matricule ; dateSession ; themesText)</label>
+            <textarea id="bulkCsvInput" style="min-height:200px;" placeholder="matricule;dateSession;themesText&#10;3891;2026-04-04;Thème A&#10;4012;2026-04-04;Thème B / Thème C&#10;3891;2026-04-18;Thème D"></textarea>
+          </div>
+          <div id="bulkCsvPreview" class="mini" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
         <div class="section-title">
-          <h3>Import en masse (CSV)</h3>
+          <h3>Lancer la génération</h3>
+          <div class="toolbar">
+            <button class="btn-secondary" onclick="previewCsv()">Aperçu</button>
+            <button class="btn-primary" onclick="generateFromCsv()">Générer tous les PDF</button>
+          </div>
         </div>
-        <p class="mini" style="margin-bottom:10px;">Colle un tableau CSV avec les colonnes : <strong>matricule ; dateSession ; themesText</strong> (séparateur <code>;</code>). Les champs communs (intitulé, durée, lieu, remarques) sont repris du formulaire ci-dessus. Les fiches existantes pour un même agent + même date sont remplacées ; les autres dates ne sont pas impactées.</p>
-        <div>
-          <label>Contenu CSV</label>
-          <textarea id="bulkCsvInput" style="min-height:140px;" placeholder="matricule;dateSession;themesText&#10;3891;2026-04-04;Thème A&#10;4012;2026-04-18;Thème B / Thème C"></textarea>
-        </div>
-        <div class="toolbar" style="margin-top:12px;">
-          <button class="btn-primary" onclick="generateFromCsv()">Générer depuis le CSV</button>
-          <span id="bulkCsvCount" class="mini"></span>
-        </div>
-        <div id="bulkCsvResults" class="results" style="margin-top:12px;"></div>
+        <div id="bulkCsvResults" class="results"></div>
       </div>
     </section>
 
@@ -711,8 +751,14 @@
       document.getElementById('defaultLocation').value = state.settings.defaultLocation || '';
 
       renderThemeSelect();
+      renderImportThemeSelect();
       renderThemeModelsEditor();
       renderAgentList();
+
+      // Initialiser les champs de l'onglet Import avec les valeurs par défaut
+      document.getElementById('importIntitule').value = state.settings.defaultTitle || '';
+      document.getElementById('importDuree').value = state.settings.defaultDuration || '';
+      document.getElementById('importLieu').value = state.settings.defaultLocation || '';
       renderUsers();
       resetUserForm();
       applyAccessRights();
@@ -728,6 +774,7 @@
       document.getElementById('tabUsers').style.display = isAdmin ? 'inline-flex' : 'none';
       document.getElementById('tabSettings').style.display = isAdmin ? 'inline-flex' : 'none';
       document.getElementById('tabGenerate').style.display = isAgent ? 'none' : 'inline-flex';
+      document.getElementById('tabImport').style.display = isAgent ? 'none' : 'inline-flex';
       document.getElementById('tabDashboard').style.display = isAgent ? 'none' : 'inline-flex';
 
       if (!isAdmin) {
@@ -737,6 +784,7 @@
 
       if (isAgent) {
         document.getElementById('generateSection').classList.add('hidden');
+        document.getElementById('importSection').classList.add('hidden');
         document.getElementById('dashboardSection').classList.add('hidden');
         document.getElementById('usersSection').classList.add('hidden');
         document.getElementById('settingsSection').classList.add('hidden');
@@ -770,7 +818,7 @@
     function switchTab(tabName) {
       const role = (state.currentUser && state.currentUser.role || '').toUpperCase();
       if (role === 'AGENT' && tabName !== 'signature') tabName = 'signature';
-      const tabs = ['generate', 'dashboard', 'signature', 'users', 'settings'];
+      const tabs = ['generate', 'import', 'dashboard', 'signature', 'users', 'settings'];
       tabs.forEach(name => {
         const section = document.getElementById(name + 'Section');
         const tab = document.getElementById('tab' + capitalize(name));
@@ -886,24 +934,56 @@
         .filter(row => row.matricule && row.dateSession);
     }
 
+    function previewCsv() {
+      const rows = parseBulkCsv(document.getElementById('bulkCsvInput').value);
+      const box = document.getElementById('bulkCsvPreview');
+      if (!rows.length) {
+        box.innerHTML = '<span style="color:var(--danger);">Aucune ligne valide détectée.</span>';
+        return;
+      }
+      const agentMap = {};
+      state.agents.forEach(a => { agentMap[a.matricule] = a.fullName; });
+      const dates = [...new Set(rows.map(r => r.dateSession))];
+      box.innerHTML = '<strong>' + rows.length + ' fiche(s)</strong> · ' + dates.length + ' date(s) : ' + dates.join(', ') +
+        '<div style="margin-top:6px;max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:8px;">' +
+        rows.map(r => `<div style="padding:2px 0;"><strong>${escapeHtml(r.matricule)}</strong> <span class="mini">${escapeHtml(agentMap[r.matricule] || '?')}</span> · ${escapeHtml(r.dateSession)} · <em>${escapeHtml((r.themesText || '').substring(0, 60))}${(r.themesText || '').length > 60 ? '…' : ''}</em></div>`).join('') +
+        '</div>';
+    }
+
+    function renderImportThemeSelect() {
+      const select = document.getElementById('importThemeModel');
+      if (!select) return;
+      select.innerHTML = ['<option value="">-- Aucun --</option>']
+        .concat(state.themeModels.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`))
+        .join('');
+    }
+
+    function applyImportThemeModel() {
+      const selected = document.getElementById('importThemeModel').value;
+      const model = state.themeModels.find(x => x.name === selected);
+      // Le modèle sert de fallback pour les agents sans thèmes dans le CSV
+      if (model) showToast('Modèle "' + selected + '" sera utilisé comme fallback si un agent n\'a pas de thèmes dans le CSV.', 'info');
+    }
+
     async function generateFromCsv() {
       const csvRaw = document.getElementById('bulkCsvInput').value;
       const rows = parseBulkCsv(csvRaw);
       if (!rows.length) return showToast('Aucune ligne valide détectée dans le CSV.', 'error');
 
       const commonPayload = {
-        intituleSession: document.getElementById('intituleSession').value.trim(),
-        duree: document.getElementById('duree').value.trim(),
-        lieu: document.getElementById('lieu').value.trim(),
-        remarques: document.getElementById('remarques').value.trim(),
-        themeModelName: document.getElementById('themeModelSelect').value
+        intituleSession: document.getElementById('importIntitule').value.trim(),
+        duree: document.getElementById('importDuree').value.trim(),
+        lieu: document.getElementById('importLieu').value.trim(),
+        remarques: document.getElementById('importRemarques').value.trim(),
+        themeModelName: document.getElementById('importThemeModel').value
       };
 
-      const countEl = document.getElementById('bulkCsvCount');
-      countEl.textContent = rows.length + ' ligne(s) détectée(s)';
+      // Thèmes fallback depuis le modèle sélectionné
+      const fallbackModel = state.themeModels.find(x => x.name === commonPayload.themeModelName);
+      const fallbackThemes = fallbackModel ? fallbackModel.content : '';
 
       const box = document.getElementById('bulkCsvResults');
-      const btn = document.querySelector('#generateSection .card:last-of-type .btn-primary');
+      const btn = document.querySelector('#importSection .btn-primary');
       await withButtonLock(btn, async () => {
         showLoading(true, 'Génération en masse : 0/' + rows.length + '…');
         box.innerHTML = '';
@@ -926,16 +1006,12 @@
             duree: commonPayload.duree,
             lieu: commonPayload.lieu,
             themeModelName: commonPayload.themeModelName,
+            themesText: fallbackThemes,
             remarques: commonPayload.remarques,
             selectedMatricules: group.map(r => r.matricule),
             agentThemesMap: {}
           };
-          // Thèmes spécifiques par agent
           group.forEach(r => { if (r.themesText) payload.agentThemesMap[r.matricule] = r.themesText; });
-          // Thèmes communs si pas spécifique
-          if (!commonPayload.themeModelName) {
-            payload.themesText = document.getElementById('themesText').value.trim();
-          }
 
           try {
             const res = await rpc('generateAttendancePdfs', state.token, payload);
@@ -964,6 +1040,7 @@
         }
         await loadDashboard();
         await loadSignatureQueue();
+        showToast(allResults.filter(r => r.success).length + '/' + allResults.length + ' PDF générés.', 'success');
       });
     }
 
