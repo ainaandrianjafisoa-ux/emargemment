@@ -375,7 +375,6 @@
                 <th>Date session</th>
                 <th>Intervenant</th>
                 <th>PDF</th>
-                <th>Doc source</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -906,7 +905,6 @@
           <td>${escapeHtml(row.dateSession || '')}</td>
           <td>${escapeHtml(row.intervenant || '')}</td>
           <td>${row.pdfUrl ? `<a href="${escapeAttr(row.pdfUrl)}" target="_blank">Ouvrir</a>` : '<span class="mini">-</span>'}</td>
-          <td>${row.sourceDocUrl ? `<a href="${escapeAttr(row.sourceDocUrl)}" target="_blank">Source</a>` : '<span class="mini">-</span>'}</td>
           <td>
             ${row.rowNumber ? `<div class="status-actions">
               ${row.canSignIntervenant ? `<button class="btn-success" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ TL</button>` : ''}
@@ -914,7 +912,7 @@
             </div>` : '<span class="mini">-</span>'}
           </td>
         </tr>
-      `).join('') || '<tr><td colspan="11" class="mini" style="text-align:center;padding:24px;">Aucune donnée pour cette période. Générez des PDF depuis l\'onglet Génération.</td></tr>';
+      `).join('') || '<tr><td colspan="10" class="mini" style="text-align:center;padding:24px;">Aucune donnée pour cette période. Générez des PDF depuis l\'onglet Génération.</td></tr>';
     }
 
     function renderBadge(status, type) {
@@ -975,7 +973,6 @@
             ${row.canSignIntervenant ? `<button class="btn-success" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ Signer (Team leader)</button>` : ''}
             ${row.canSignAgent ? `<button class="btn-secondary" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Signer (Ambassadeur)</button>` : ''}
             ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.pdfUrl)}" target="_blank">📄 PDF</a>` : ''}
-            ${row.sourceDocUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.sourceDocUrl)}" target="_blank">📝 Doc</a>` : ''}
           </div>
         </div>
       `).join('') || '<div class="signature-card" style="text-align:center;padding:24px;"><span class="mini">Aucune fiche à signer sur cette période. Vérifiez le mois sélectionné ou générez des PDF.</span></div>';
@@ -1279,23 +1276,22 @@
 
     // SVG preview mini pour les cartes de signature
     function buildSignaturePreviewHtml(row) {
+      const sessionDate = escapeHtml(row.dateSession || '');
       const parts = [];
       if (row.statutSignatureIntervenant === 'Signé' && row.signatureIntervenantAt) {
         const name = escapeHtml(row.intervenant || 'Team leader');
-        const date = escapeHtml(row.signatureIntervenantAt || row.dateSession || '');
         parts.push(`<div class="sig-preview">
           <div class="sig-preview-label">✅ Signature Team leader</div>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 80" style="height:56px;">
             <path d="M12 40 C36 34, 50 42, 80 37 S130 43, 170 37 S220 42, 270 37" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
             <text x="14" y="38" font-size="22" font-style="italic" font-family="serif" fill="currentColor">${name}</text>
             <line x1="12" y1="52" x2="270" y2="52" stroke="currentColor" stroke-width="1" opacity=".4"/>
-            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Team leader · ${date}</text>
+            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Team leader · ${sessionDate}</text>
           </svg>
         </div>`);
       }
       if (row.statutSignatureAgent === 'Signé' && row.signatureAgentAt) {
         const prenom = escapeHtml((row.prenom || row.name || 'Agent').split(' ')[0]);
-        const date   = escapeHtml(row.signatureAgentAt || row.dateSession || '');
         const mat    = escapeHtml(row.matricule || '');
         parts.push(`<div class="sig-preview">
           <div class="sig-preview-label">✅ Signature Ambassadeur</div>
@@ -1303,7 +1299,7 @@
             <path d="M12 40 C36 34, 50 42, 80 37 S130 43, 170 37 S220 42, 270 37" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
             <text x="14" y="38" font-size="22" font-style="italic" font-family="serif" fill="currentColor">${prenom}</text>
             <line x1="12" y1="52" x2="270" y2="52" stroke="currentColor" stroke-width="1" opacity=".4"/>
-            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Ambassadeur · ${mat} · ${date}</text>
+            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Ambassadeur · ${mat} · ${sessionDate}</text>
           </svg>
         </div>`);
       }
