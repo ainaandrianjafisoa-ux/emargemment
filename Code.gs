@@ -486,6 +486,7 @@ function generateAttendancePdfs(token, payload) {
     throw new Error("Le modèle doit être un Google Docs natif. Ouvre le .docx puis fais 'Fichier > Enregistrer comme Google Docs', puis renseigne le nouvel ID dans PARAMETRES > DOC_TEMPLATE_ID.");
   }
 
+  const agentThemesMap = (payload.agentThemesMap && typeof payload.agentThemesMap === 'object') ? payload.agentThemesMap : {};
   const results = [];
 
   selectedMatricules.forEach(matricule => {
@@ -509,11 +510,14 @@ function generateAttendancePdfs(token, payload) {
       const doc = openDocumentWithRetry_(docCopy.getId(), 5);
       const body = doc.getBody();
 
+      // Thèmes spécifiques par agent (import CSV) ou thèmes communs
+      const agentThemes = String(agentThemesMap[matricule] || payload.themesText || '');
+
       replaceTextSafely_(body, '{{INTITULE_SESSION}}', String(payload.intituleSession || ''));
       replaceTextSafely_(body, '{{DATE_SESSION}}', formatDateFr_(sessionDate));
       replaceTextSafely_(body, '{{DUREE_SESSION}}', String(payload.duree || ''));
       replaceTextSafely_(body, '{{LIEU}}', String(payload.lieu || ''));
-      replaceTextSafely_(body, '{{THEMES_ABORDES}}', String(payload.themesText || ''));
+      replaceTextSafely_(body, '{{THEMES_ABORDES}}', agentThemes);
       replaceTextSafely_(body, '{{AGENT_MATRICULE}}', agent.matricule);
       replaceTextSafely_(body, '{{AGENT_NOM_PRENOM}}', agent.fullName);
       replaceTextSafely_(body, '{{SOUS_EQUIPE}}', agent.sousEquipe);
@@ -538,7 +542,7 @@ function generateAttendancePdfs(token, payload) {
         intervenantNom: cleanIntervenantLabel_(session.name),
         intervenantTitle: session.title || APP.SIGNATURE_TITLE_DEFAULT,
         themeModel: String(payload.themeModelName || ''),
-        themesText: String(payload.themesText || ''),
+        themesText: agentThemes,
         remarques: String(payload.remarques || ''),
         sourceDocFileId: docCopy.getId(),
         sourceDocUrl: docCopy.getUrl(),

@@ -343,6 +343,22 @@
         <h3>Résultats</h3>
         <div id="results" class="results"></div>
       </div>
+
+      <div class="card glass-card" style="margin-top:16px;">
+        <div class="section-title">
+          <h3>Import en masse (CSV)</h3>
+        </div>
+        <p class="mini" style="margin-bottom:10px;">Colle un tableau CSV avec les colonnes : <strong>matricule ; dateSession ; themesText</strong> (séparateur <code>;</code>). Les champs communs (intitulé, durée, lieu, remarques) sont repris du formulaire ci-dessus. Les fiches existantes pour un même agent + même date sont remplacées ; les autres dates ne sont pas impactées.</p>
+        <div>
+          <label>Contenu CSV</label>
+          <textarea id="bulkCsvInput" style="min-height:140px;" placeholder="matricule;dateSession;themesText&#10;3891;2026-04-04;Thème A&#10;4012;2026-04-18;Thème B / Thème C"></textarea>
+        </div>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn-primary" onclick="generateFromCsv()">Générer depuis le CSV</button>
+          <span id="bulkCsvCount" class="mini"></span>
+        </div>
+        <div id="bulkCsvResults" class="results" style="margin-top:12px;"></div>
+      </div>
     </section>
 
     <section id="dashboardSection" class="hidden">
@@ -857,6 +873,98 @@
         box.innerHTML = `<div class="result-item" style="border-color:#d96a63;">${escapeHtml(err.message)}</div>`;
       }
       }); // withButtonLock
+    }
+
+    function parseBulkCsv(raw) {
+      return raw.trim().split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.toLowerCase().startsWith('matricule'))
+        .map(line => {
+          const parts = line.split(';').map(s => s.trim());
+          return { matricule: parts[0] || '', dateSession: parts[1] || '', themesText: parts[2] || '' };
+        })
+        .filter(row => row.matricule && row.dateSession);
+    }
+
+    async function generateFromCsv() {
+      const csvRaw = document.getElementById('bulkCsvInput').value;
+      const rows = parseBulkCsv(csvRaw);
+      if (!rows.length) return showToast('Aucune ligne valide détectée dans le CSV.', 'error');
+
+      const commonPayload = {
+        intituleSession: document.getElementById('intituleSession').value.trim(),
+        duree: document.getElementById('duree').value.trim(),
+        lieu: document.getElementById('lieu').value.trim(),
+        remarques: document.getElementById('remarques').value.trim(),
+        themeModelName: document.getElementById('themeModelSelect').value
+      };
+
+      const countEl = document.getElementById('bulkCsvCount');
+      countEl.textContent = rows.length + ' ligne(s) détectée(s)';
+
+      const box = document.getElementById('bulkCsvResults');
+      const btn = document.querySelector('#generateSection .card:last-of-type .btn-primary');
+      await withButtonLock(btn, async () => {
+        showLoading(true, 'Génération en masse : 0/' + rows.length + '…');
+        box.innerHTML = '';
+        const allResults = [];
+
+        // Grouper par dateSession pour appeler le backend par lot
+        const byDate = {};
+        rows.forEach(r => {
+          if (!byDate[r.dateSession]) byDate[r.dateSession] = [];
+          byDate[r.dateSession].push(r);
+        });
+
+        let done = 0;
+        const dates = Object.keys(byDate);
+        for (const dateKey of dates) {
+          const group = byDate[dateKey];
+          const payload = {
+            intituleSession: commonPayload.intituleSession,
+            sessionDate: dateKey,
+            duree: commonPayload.duree,
+            lieu: commonPayload.lieu,
+            themeModelName: commonPayload.themeModelName,
+            remarques: commonPayload.remarques,
+            selectedMatricules: group.map(r => r.matricule),
+            agentThemesMap: {}
+          };
+          // Thèmes spécifiques par agent
+          group.forEach(r => { if (r.themesText) payload.agentThemesMap[r.matricule] = r.themesText; });
+          // Thèmes communs si pas spécifique
+          if (!commonPayload.themeModelName) {
+            payload.themesText = document.getElementById('themesText').value.trim();
+          }
+
+          try {
+            const res = await rpc('generateAttendancePdfs', state.token, payload);
+            allResults.push(...(res.results || []));
+          } catch (err) {
+            group.forEach(r => allResults.push({ matricule: r.matricule, success: false, message: err.message }));
+          }
+          done += group.length;
+          showLoading(true, 'Génération en masse : ' + done + '/' + rows.length + '…');
+        }
+
+        showLoading(false);
+        box.innerHTML = allResults.map(item => `
+          <div class="result-item ${item.success ? 'success' : 'failure'}">
+            <div><strong>${item.success ? '✅' : '❌'} ${escapeHtml(item.agent || item.matricule || '')}</strong></div>
+            <div class="mini">${escapeHtml(item.message || '')}</div>
+            ${item.pdfUrl ? `<div style="margin-top:6px;"><a class="btn-primary" style="display:inline-block;padding:7px 14px;border-radius:10px;text-decoration:none;font-size:13px;" href="${escapeAttr(item.pdfUrl)}" target="_blank">📄 Ouvrir le PDF</a></div>` : ''}
+          </div>
+        `).join('') || '<div class="result-item">Aucun résultat.</div>';
+
+        const firstDate = dates[0] || '';
+        const period = firstDate.slice(0, 7);
+        if (period) {
+          document.getElementById('dashboardMonth').value = period;
+          document.getElementById('signatureMonth').value = period;
+        }
+        await loadDashboard();
+        await loadSignatureQueue();
+      });
     }
 
     function shiftMonth(delta) {
