@@ -146,7 +146,7 @@
     .agent-item:last-child, .user-row-card:last-child { border-bottom:0; }
     .agent-meta { display:flex; flex-direction:column; gap:3px; }
     .table-wrap {
-      overflow:auto; border-radius:20px; border:1px solid var(--line); background: var(--surface-2);
+      overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:20px; border:1px solid var(--line); background: var(--surface-2);
     }
     table { width:100%; border-collapse: collapse; }
     th, td { padding:12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
@@ -766,6 +766,14 @@
 
     function capitalize(str) { return str.charAt(0).toUpperCase() + str.slice(1); }
 
+    async function withButtonLock(btn, asyncFn) {
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      const origText = btn.textContent;
+      try { return await asyncFn(); }
+      finally { btn.disabled = false; btn.textContent = origText; }
+    }
+
     function renderThemeSelect() {
       const select = document.getElementById('themeModelSelect');
       select.innerHTML = ['<option value="">-- Aucun modèle --</option>']
@@ -820,7 +828,11 @@
         remarques: document.getElementById('remarques').value.trim(),
         selectedMatricules: getSelectedMatricules()
       };
+      if (!payload.sessionDate) return showToast('La date de session est requise.', 'error');
+      if (!payload.selectedMatricules.length) return showToast('Sélectionne au moins un agent.', 'error');
       const box = document.getElementById('results');
+      const btn = document.querySelector('#generateSection .btn-primary');
+      await withButtonLock(btn, async () => {
       showLoading(true, 'Génération des PDF en cours…');
       box.innerHTML = '';
       try {
@@ -830,7 +842,7 @@
           <div class="result-item ${item.success ? 'success' : 'failure'}">
             <div><strong>${item.success ? '✅' : '❌'} ${escapeHtml(item.agent || item.matricule || '')}</strong></div>
             <div class="mini">${escapeHtml(item.message || '')}</div>
-            ${item.pdfUrl ? `<div style="margin-top:6px;"><a class="btn-primary" style="display:inline-block;padding:7px 14px;border-radius:10px;text-decoration:none;font-size:13px;" href="${item.pdfUrl}" target="_blank">📄 Ouvrir le PDF</a></div>` : ''}
+            ${item.pdfUrl ? `<div style="margin-top:6px;"><a class="btn-primary" style="display:inline-block;padding:7px 14px;border-radius:10px;text-decoration:none;font-size:13px;" href="${escapeAttr(item.pdfUrl)}" target="_blank">📄 Ouvrir le PDF</a></div>` : ''}
           </div>
         `).join('') || '<div class="result-item">Aucun résultat.</div>';
         const period = payload.sessionDate ? payload.sessionDate.slice(0, 7) : res.period;
@@ -845,6 +857,7 @@
         showLoading(false);
         box.innerHTML = `<div class="result-item" style="border-color:#d96a63;">${escapeHtml(err.message)}</div>`;
       }
+      }); // withButtonLock
     }
 
     function shiftMonth(delta) {
@@ -859,9 +872,16 @@
 
     async function loadDashboard() {
       const period = document.getElementById('dashboardMonth').value || new Date().toISOString().slice(0, 7);
-      const data = await rpc('getDashboard', state.token, period);
-      state.dashboardRows = data.rows || [];
-      renderDashboard();
+      showLoading(true, 'Chargement du tableau de bord…');
+      try {
+        const data = await rpc('getDashboard', state.token, period);
+        state.dashboardRows = data.rows || [];
+        renderDashboard();
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      } finally {
+        showLoading(false);
+      }
     }
 
     function renderDashboard() {
@@ -885,8 +905,8 @@
           <td>${renderBadge(row.statutSignatureAgent, 'signature')}</td>
           <td>${escapeHtml(row.dateSession || '')}</td>
           <td>${escapeHtml(row.intervenant || '')}</td>
-          <td>${row.pdfUrl ? `<a href="${row.pdfUrl}" target="_blank">Ouvrir</a>` : '<span class="mini">-</span>'}</td>
-          <td>${row.sourceDocUrl ? `<a href="${row.sourceDocUrl}" target="_blank">Source</a>` : '<span class="mini">-</span>'}</td>
+          <td>${row.pdfUrl ? `<a href="${escapeAttr(row.pdfUrl)}" target="_blank">Ouvrir</a>` : '<span class="mini">-</span>'}</td>
+          <td>${row.sourceDocUrl ? `<a href="${escapeAttr(row.sourceDocUrl)}" target="_blank">Source</a>` : '<span class="mini">-</span>'}</td>
           <td>
             ${row.rowNumber ? `<div class="status-actions">
               ${row.canSignIntervenant ? `<button class="btn-success" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ TL</button>` : ''}
@@ -894,7 +914,7 @@
             </div>` : '<span class="mini">-</span>'}
           </td>
         </tr>
-      `).join('') || '<tr><td colspan="11" class="mini">Aucune donnée.</td></tr>';
+      `).join('') || '<tr><td colspan="11" class="mini" style="text-align:center;padding:24px;">Aucune donnée pour cette période. Générez des PDF depuis l\'onglet Génération.</td></tr>';
     }
 
     function renderBadge(status, type) {
@@ -918,10 +938,17 @@
 
     async function loadSignatureQueue() {
       const period = document.getElementById('signatureMonth').value || new Date().toISOString().slice(0, 7);
-      const data = await rpc('getSignatureQueue', state.token, period);
-      state.signatureRows = data.rows || [];
-      renderSignatureCards();
-      renderQuickSignatureSelect();
+      showLoading(true, 'Chargement des signatures…');
+      try {
+        const data = await rpc('getSignatureQueue', state.token, period);
+        state.signatureRows = data.rows || [];
+        renderSignatureCards();
+        renderQuickSignatureSelect();
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      } finally {
+        showLoading(false);
+      }
     }
 
     function renderSignatureCards() {
@@ -947,11 +974,11 @@
           <div class="status-actions" style="margin-top:8px;">
             ${row.canSignIntervenant ? `<button class="btn-success" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ Signer (Team leader)</button>` : ''}
             ${row.canSignAgent ? `<button class="btn-secondary" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Signer (Ambassadeur)</button>` : ''}
-            ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${row.pdfUrl}" target="_blank">📄 PDF</a>` : ''}
-            ${row.sourceDocUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${row.sourceDocUrl}" target="_blank">📝 Doc</a>` : ''}
+            ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.pdfUrl)}" target="_blank">📄 PDF</a>` : ''}
+            ${row.sourceDocUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.sourceDocUrl)}" target="_blank">📝 Doc</a>` : ''}
           </div>
         </div>
-      `).join('') || '<div class="signature-card"><span class="mini">Aucune fiche à afficher sur cette période.</span></div>';
+      `).join('') || '<div class="signature-card" style="text-align:center;padding:24px;"><span class="mini">Aucune fiche à signer sur cette période. Vérifiez le mois sélectionné ou générez des PDF.</span></div>';
     }
 
     function renderQuickSignatureSelect() {
@@ -1049,7 +1076,8 @@
       const password = document.getElementById('signatureModalPassword').value;
       if (!modal) return;
       if (!password) return showToast('Entre le mot de passe.', 'error');
-
+      const btn = document.querySelector('#signatureModal .btn-primary');
+      await withButtonLock(btn, async () => {
       try {
         showLoading(true, 'Signature en cours…');
         if (modal.mode === 'bulk') {
@@ -1071,8 +1099,10 @@
           showToast('✅ Signature appliquée — PDF régénéré', 'success');
         }
       } catch (err) {
+        showLoading(false);
         showToast('❌ ' + err.message, 'error');
       }
+      }); // withButtonLock
     }
     function renderThemeModelsEditor() {
       const container = document.getElementById('themeModelsContainer');
@@ -1131,13 +1161,18 @@
         defaultLocation: document.getElementById('defaultLocation').value.trim(),
         themeModels: collectThemeModels()
       };
-      try {
-        await rpc('saveSettings', state.token, payload);
-        showToast('✅ Paramètres enregistrés', 'success');
-        await bootstrap();
-      } catch (err) {
-        showToast('❌ ' + err.message, 'error');
-      }
+      if (!payload.templateId) return showToast('L\'ID du modèle Google Doc est requis.', 'error');
+      if (!payload.outputFolderId) return showToast('L\'ID du dossier de sortie est requis.', 'error');
+      const btn = document.querySelector('#settingsSection .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          await rpc('saveSettings', state.token, payload);
+          showToast('Paramètres enregistrés avec succès.', 'success');
+          await bootstrap();
+        } catch (err) {
+          showToast('❌ ' + err.message, 'error');
+        }
+      });
     }
 
     function resetUserForm() {
@@ -1207,13 +1242,19 @@
         active: document.getElementById('userFormActive').value === 'true',
         agentMatricule: document.getElementById('userFormAgentMatricule').value.trim()
       };
-      try {
-        await rpc('saveUserAdmin', state.token, payload);
-        await bootstrap();
-        switchTab('users');
-      } catch (err) {
-        showToast('❌ ' + err.message, 'error');
-      }
+      if (!payload.userId) return showToast('L\'identifiant utilisateur est requis.', 'error');
+      if (!payload.name) return showToast('Le nom est requis.', 'error');
+      const btn = document.querySelector('#usersSection .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          await rpc('saveUserAdmin', state.token, payload);
+          showToast('Utilisateur enregistré avec succès.', 'success');
+          await bootstrap();
+          switchTab('users');
+        } catch (err) {
+          showToast('❌ ' + err.message, 'error');
+        }
+      });
     }
 
     async function deleteUser(userId) {
@@ -1292,10 +1333,24 @@
           }
         });
       });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          const modal = document.getElementById('signatureModal');
+          if (modal && !modal.classList.contains('hidden')) {
+            closeSignatureModal();
+          }
+        }
+      });
+      const modalPwd = document.getElementById('signatureModalPassword');
+      if (modalPwd) {
+        modalPwd.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); confirmSignatureModal(); }
+        });
+      }
     });
   </script>
 
-  <div id="signatureModal" class="modal-backdrop hidden">
+  <div id="signatureModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="signatureModalTitle">
     <div class="modal-panel">
       <h3 id="signatureModalTitle">Signer</h3>
       <div id="signatureModalSummary" class="modal-summary mini" style="margin-top:10px;"></div>

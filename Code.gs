@@ -78,7 +78,7 @@ function rememberActiveSpreadsheet_() {
       PropertiesService.getScriptProperties().setProperty(APP.SCRIPT_PROPS.SPREADSHEET_ID, active.getId());
       return active;
     }
-  } catch (err) {}
+  } catch (err) { console.warn('rememberActiveSpreadsheet_:', err); }
   return null;
 }
 
@@ -89,7 +89,7 @@ function getAppSpreadsheet_() {
       PropertiesService.getScriptProperties().setProperty(APP.SCRIPT_PROPS.SPREADSHEET_ID, active.getId());
       return active;
     }
-  } catch (err) {}
+  } catch (err) { console.warn('getAppSpreadsheet_ active lookup:', err); }
 
   const storedId = PropertiesService.getScriptProperties().getProperty(APP.SCRIPT_PROPS.SPREADSHEET_ID);
   if (storedId) {
@@ -500,8 +500,7 @@ function generateAttendancePdfs(token, payload) {
       const pdfName = buildPdfName_(agent.prenom || agent.fullName, sessionDate);
       const sourceDocName = buildSourceDocName_(agent.fullName, sessionDate);
 
-      if (existing && existing.pdfFileId) trashFileIfExists_(existing.pdfFileId);
-      if (existing && existing.sourceDocFileId) trashFileIfExists_(existing.sourceDocFileId);
+      // Nettoyage des doublons orphelins par nom (safe avant makeCopy)
       trashFilesByNameInFolder_(periodFolder, pdfName);
       trashFilesByNameInFolder_(periodFolder, sourceDocName);
 
@@ -563,6 +562,10 @@ function generateAttendancePdfs(token, payload) {
       record.pdfFileId = pdfFile.getId();
       record.pdfUrl = pdfFile.getUrl();
       record.statutPdf = APP.STATUS.PDF_GENERATED;
+
+      // Suppression des anciens fichiers APRÈS génération réussie (évite la perte de données)
+      if (existing && existing.pdfFileId) trashFileIfExists_(existing.pdfFileId);
+      if (existing && existing.sourceDocFileId) trashFileIfExists_(existing.sourceDocFileId);
 
       upsertTrackingRecord_(trackingSheet, existing ? existing.rowNumber : null, record);
       SpreadsheetApp.flush();
@@ -626,6 +629,7 @@ function signRecord(token, payload) {
   validateSessionPassword_(session.userId, password);
 
   const sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  if (rowNumber > sheet.getLastRow()) throw new Error('Ligne hors limites.');
   const record = getTrackingRecordByRow_(rowNumber);
   if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
   if (!record.sourceDocFileId) throw new Error('Document source introuvable.');
@@ -667,6 +671,7 @@ function bulkSignRecords(token, payload) {
 
   if (!password) throw new Error('Mot de passe requis.');
   if (!rowNumbers.length) throw new Error('Aucune fiche sélectionnée.');
+  if (rowNumbers.length > 50) throw new Error('Maximum 50 fiches par lot. Vous en avez sélectionné ' + rowNumbers.length + '.');
   if (!signatureType) throw new Error('Type de signature requis.');
 
   validateSessionPassword_(session.userId, password);
@@ -963,7 +968,7 @@ function appendHiddenMarker_(cell, marker) {
   const p = cell.appendParagraph(marker);
   const text = p.editAsText();
   text.setFontSize(1);
-  try { text.setForegroundColor('#ffffff'); } catch (err) {}
+  try { text.setForegroundColor('#ffffff'); } catch (err) { console.warn('setForegroundColor:', err); }
 }
 
 function clearTableCell_(cell) {
@@ -1038,7 +1043,10 @@ function getTrackingRowsByPeriodFiltered_(session, period) {
   if (isAgent_(session)) {
     return rows.filter(item => isSameAgentForSession_(session, item.agentMatricule));
   }
-  return rows;
+  // USER (intervenant) : ne voit que ses propres fiches
+  return rows.filter(item =>
+    String(item.intervenantUserId || '').trim() === String(session.userId || '').trim()
+  );
 }
 
 function canSessionSignIntervenant_(session, record) {
@@ -1241,6 +1249,7 @@ function getTrackingRecordByRow_(rowNumber) {
 }
 
 function mapTrackingRow_(row, rowNumber) {
+  while (row.length < 31) row.push('');
   return {
     rowNumber: rowNumber,
     recordId: row[0],
@@ -1282,7 +1291,7 @@ function deriveTrackingPeriod_(record) {
   try {
     const explicit = rawPeriod ? normalizePeriod_(rawPeriod) : '';
     if (explicit) return explicit;
-  } catch (err) {}
+  } catch (err) { console.warn('deriveTrackingPeriod_ normalizePeriod_:', err); }
 
   const rawDate = record ? record.dateSession : '';
   if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
@@ -1383,7 +1392,7 @@ function isSameAgentForSession_(session, agentMatricule) {
 
 function trashFileIfExists_(fileId) {
   if (!fileId) return;
-  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (err) {}
+  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (err) { console.warn('trashFileIfExists_:', err); }
 }
 
 function trashFilesByNameInFolder_(folder, fileName) {
@@ -1412,7 +1421,8 @@ function formatMaybeDateTimeFr_(value) {
 }
 
 function replaceTextSafely_(body, placeholder, value) {
-  body.replaceText(escapeRegex_(placeholder), value == null ? '' : String(value));
+  var safeValue = (value == null ? '' : String(value)).replace(/\$/g, '$$$$');
+  body.replaceText(escapeRegex_(placeholder), safeValue);
 }
 
 function escapeRegex_(text) {
@@ -1489,12 +1499,16 @@ function monthLabelFr_(date) {
   return months[date.getMonth()] + ' ' + date.getFullYear();
 }
 
+function sanitizeFileName_(str) {
+  return String(str || '').replace(/[\/\\*?"<>|]/g, '_').trim();
+}
+
 function buildPdfName_(prenom, sessionDate) {
-  return 'PROD-ENR-004C-Feuille de présence - ' + String(prenom || '').trim() + ' - ' + monthLabelFr_(sessionDate) + '.pdf';
+  return 'PROD-ENR-004C-Feuille de présence - ' + sanitizeFileName_(prenom) + ' - ' + monthLabelFr_(sessionDate) + '.pdf';
 }
 
 function buildSourceDocName_(fullName, sessionDate) {
-  return 'SRC - PROD-ENR-004C - ' + String(fullName || '').trim() + ' - ' + monthLabelFr_(sessionDate);
+  return 'SRC - PROD-ENR-004C - ' + sanitizeFileName_(fullName) + ' - ' + monthLabelFr_(sessionDate);
 }
 
 function appendLabeledLine_(body, label, placeholder) {
