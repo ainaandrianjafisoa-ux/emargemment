@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --bg-soft: #111111;
+      --surface: rgba(23,23,23,0.60);
+      --surface-2: rgba(23,23,23,0.78);
+      --line: rgba(38,38,38,0.58);
+      --text: #f5f2ea;
+      --muted: #b8b1a2;
+      --gold: #D4AF37;
+      --gold-strong: #f2cc58;
+      --gold-soft: rgba(212,175,55,0.14);
+      --success: #4ade80;
+      --danger: #fb7185;
+      --warning: #fbbf24;
+      --shadow: 0 25px 50px -12px rgba(0,0,0,0.55);
+      --glass: blur(20px);
+      --radius: 24px;
+    }
+    body.light {
+      --bg: #f7f3ea;
+      --bg-soft: #fffaf0;
+      --surface: rgba(255,255,255,0.78);
+      --surface-2: rgba(255,255,255,0.92);
+      --line: rgba(23,23,23,0.08);
+      --text: #181818;
+      --muted: #6b6558;
+      --gold: #D4AF37;
+      --gold-strong: #e6c14c;
+      --gold-soft: rgba(212,175,55,0.12);
+      --shadow: 0 25px 50px -12px rgba(0,0,0,0.12);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Manrope, Inter, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(212,175,55,.18), transparent 22%),
+        radial-gradient(circle at bottom right, rgba(212,175,55,.10), transparent 18%),
+        linear-gradient(135deg, #050505, var(--bg), var(--bg-soft));
+      transition: all .5s ease-in-out;
+    }
+    .orb {
+      position: fixed; border-radius: 999px; filter: blur(36px); opacity: .3; pointer-events:none; z-index:0;
+      animation: float 14s ease-in-out infinite alternate;
+    }
+    .orb.o1 { width: 220px; height: 220px; top: 20px; left: 20px; background: rgba(199,167,85,.28); }
+    .orb.o2 { width: 280px; height: 280px; bottom: 20px; right: 20px; background: rgba(255,255,255,.15); animation-duration: 18s; }
+    @keyframes float { from { transform: translateY(-12px) translateX(0); } to { transform: translateY(18px) translateX(12px); } }
+    @keyframes fadeUp { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+    @keyframes fadeInScale { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+
+    .hidden { display:none !important; }
+    .app, .login-wrap { position:relative; z-index:1; }
+    .app { max-width: 1480px; margin:0 auto; padding:24px; animation: fadeUp .35s ease; }
+    .login-wrap {
+      min-height: 100vh; display:grid; place-items:center; padding:24px;
+    }
+    .card, .glass-card {
+      background: rgba(23,23,23,0.60);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: var(--glass);
+      -webkit-backdrop-filter: var(--glass);
+      transition: all .5s ease-in-out;
+      animation: fadeInScale 0.6s ease-out forwards;
+    }
+    .card:hover { transform: translateY(-2px); border-color: rgba(212,175,55,0.20); box-shadow: 0 25px 50px -12px rgba(212,175,55,0.10), var(--shadow); }
+    .login-card { width:min(440px, 100%); }
+    .header {
+      display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:18px;
+    }
+    .hero h1 { margin:0 0 6px; font-size:34px; font-weight:800; letter-spacing:-0.03em; }
+    .hero p, .muted { color: var(--muted); }
+    .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+    .tab {
+      border:1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 999px;
+      cursor:pointer;
+      transition: all .5s ease-in-out;
+      font-weight:700;
+    }
+    .tab.active {
+      background: linear-gradient(135deg, #ca9f21, var(--gold), #fde68a);
+      color: #111111;
+      border-color: transparent;
+      box-shadow: 0 10px 24px rgba(212,175,55,.24);
+    }
+    h1,h2,h3 { margin:0 0 10px; letter-spacing:-0.03em; }
+    p { margin:0 0 10px; }
+    label {
+      display:block; font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px; color: var(--muted);
+    }
+    input, select, textarea, button {
+      font: inherit;
+    }
+    input, select, textarea {
+      width:100%; border:1px solid var(--line); background: var(--surface-2); color: var(--text); padding:12px 14px; border-radius:16px; outline:none;
+      transition: all .5s ease-in-out;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(212,175,55,.55);
+      box-shadow: 0 0 0 4px rgba(212,175,55,.14);
+    }
+    textarea { min-height:120px; resize: vertical; }
+    button {
+      border:0; border-radius:16px; padding:11px 16px; cursor:pointer; font-weight:800; transition: all .5s ease-in-out; box-shadow: 0 10px 24px rgba(0,0,0,0.20);
+    }
+    button:hover { transform: translateY(-2px); }
+    .btn-primary { background: linear-gradient(135deg, #ca9f21, var(--gold), #fde68a); color:#111111; box-shadow: 0 12px 28px rgba(212,175,55,0.10); }
+    .btn-secondary { background: rgba(23,23,23,0.78); color: var(--text); border:1px solid rgba(255,255,255,0.06); }
+    .btn-success { background: rgba(74,222,128,0.12); color:#4ade80; border:1px solid rgba(74,222,128,0.18); }
+    .btn-danger { background: rgba(251,113,133,0.12); color:#fb7185; border:1px solid rgba(251,113,133,0.18); }
+
+    .grid { display:grid; gap:16px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .stats { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:12px; }
+    .stat { padding:16px; border-radius:20px; border:1px solid var(--line); background: var(--surface-2); }
+    .value { font-size:28px; font-weight:800; }
+    .section-title { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+    .agent-list, .users-list {
+      max-height:420px; overflow:auto; border-radius:18px; border:1px solid var(--line); background: var(--surface-2); padding:10px;
+    }
+    .agent-item, .user-row-card {
+      display:flex; gap:10px; align-items:flex-start; padding:10px 8px; border-bottom:1px solid var(--line);
+    }
+    .agent-item:last-child, .user-row-card:last-child { border-bottom:0; }
+    .agent-meta { display:flex; flex-direction:column; gap:3px; }
+    .table-wrap {
+      overflow:auto; border-radius:20px; border:1px solid var(--line); background: var(--surface-2);
+    }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { position:sticky; top:0; background: rgba(0,0,0,.12); }
+    .pill {
+      display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:800;
+    }
+    .pill-ok { background: rgba(74,222,128,0.10); color:#4ade80; }
+    .pill-warn { background: rgba(250,204,21,0.10); color:#facc15; }
+    .pill-muted { background: rgba(255,255,255,.06); color: var(--text); }
+    .notice { background: rgba(212,175,55,.08); border:1px solid rgba(212,175,55,.16); border-radius:18px; padding:12px; color: var(--text); }
+    .results, .signature-cards { display:grid; gap:10px; }
+    .result-item, .signature-card {
+      border-radius:18px; border:1px solid rgba(255,255,255,0.05); background: rgba(23,23,23,0.72); padding:14px; animation: fadeUp .25s ease;
+    }
+    .status-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .right { margin-left:auto; }
+    .switch-theme {
+      width:auto; padding:10px 14px;
+    }
+    .mini { font-size:12px; color:var(--muted); }
+    .signature-form-grid { display:grid; grid-template-columns: 1.2fr .9fr auto auto; gap:10px; align-items:end; }
+    .user-form-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; }
+
+    /* ── Agent checkbox cards ── */
+    .agent-item {
+      display:flex; gap:12px; align-items:center; padding:10px 10px;
+      border-bottom:1px solid var(--line); cursor:pointer; transition:.15s ease;
+      border-radius:12px; margin-bottom:2px;
+    }
+    .agent-item:hover { background: var(--surface); }
+    .agent-item:last-child { border-bottom:0; }
+    .agent-check-box { position:relative; width:20px; height:20px; flex-shrink:0; }
+    .agent-check-box input[type=checkbox] { position:absolute; opacity:0; width:100%; height:100%; cursor:pointer; z-index:1; }
+    .agent-check-indicator {
+      width:20px; height:20px; border-radius:6px; border:2px solid var(--line);
+      background: var(--surface-2); transition:.15s ease; display:flex; align-items:center; justify-content:center;
+    }
+    .agent-check-box input:checked ~ .agent-check-indicator {
+      background: linear-gradient(135deg,var(--gold),var(--gold-strong));
+      border-color: transparent;
+    }
+    .agent-check-box input:checked ~ .agent-check-indicator::after {
+      content:'✓'; font-size:13px; font-weight:900; color:#161514;
+    }
+    /* ── Signature SVG preview ── */
+    .sig-preview {
+      background: var(--surface); border:1px solid var(--line); border-radius:14px;
+      padding:10px 14px; margin-bottom:8px; overflow:hidden;
+    }
+    .sig-preview svg { display:block; max-width:100%; height:auto; }
+    .sig-preview-label { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+    /* ── Result items ── */
+    .result-item { padding:14px 16px; }
+    .result-item.success { border-color: rgba(53,194,118,.35); }
+    .result-item.failure { border-color: rgba(224,107,103,.35); }
+    /* ── Table improvements ── */
+    th { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+    td { font-size:13px; }
+    /* ── Badge improvements ── */
+    .pill { font-size:11px; gap:4px; }
+    /* ── Signature modal ── */
+    .modal-panel { max-height:90vh; overflow-y:auto; }
+    /* ── Card hover ring ── */
+    .signature-card { transition: border-color .18s ease, transform .18s ease; }
+    .signature-card:hover { border-color: rgba(212,175,55,.28); }
+    @media (max-width: 1080px) {
+      .grid-2, .grid-3, .grid-4, .stats, .signature-form-grid, .user-form-grid { grid-template-columns: 1fr; }
+      .header { flex-direction:column; align-items:flex-start; }
+    }
+
+    .checkbox-pill {
+      display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; border:1px solid var(--line); background: var(--surface);
+      font-size:12px; font-weight:700;
+    }
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      display:flex; align-items:center; justify-content:center; padding:20px; z-index: 40;
+    }
+    .modal-panel {
+      width:min(520px, 100%); border-radius:24px; padding:20px; background: rgba(23,23,23,0.82); border:1px solid rgba(255,255,255,0.06); box-shadow: var(--shadow);
+      animation: fadeUp .18s ease;
+    }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+    .modal-summary { border-radius:18px; padding:12px; background: var(--surface); border:1px solid var(--line); }
+  </style>
+</head>
+<body class="dark">
+  <div class="orb o1"></div>
+  <div class="orb o2"></div>
+
+  <div id="loginView" class="login-wrap">
+    <div class="card glass-card login-card">
+      <div style="text-align:center;margin-bottom:14px;">
+        <div style="font-size:36px;margin-bottom:6px;">📋</div>
+        <h2 style="margin:0;">Connexion</h2>
+      </div>
+      <p class="muted">Connexion par ID user et mot de passe pour accéder à l’outil d’émargement.</p>
+      <div style="margin-top:14px;">
+        <label>ID user</label>
+        <input id="loginUserId" type="text" placeholder="Ex. hery.ny.aina" />
+      </div>
+      <div style="margin-top:12px;">
+        <label>Mot de passe</label>
+        <input id="loginPassword" type="password" placeholder="Mot de passe" />
+      </div>
+      <div class="toolbar" style="margin-top:16px;">
+        <button class="btn-primary" onclick="handleLogin()">Se connecter</button>
+        <button class="btn-secondary switch-theme" onclick="toggleTheme()">Clair / sombre</button>
+      </div>
+      <p id="loginError" class="mini" style="color:#d96a63; margin-top:12px;"></p>
+    </div>
+  </div>
+
+  <div id="appView" class="app hidden">
+    <div class="header">
+      <div class="hero">
+        <h1 id="appTitle">Émargement mensuel — L'Atelier Noir</h1>
+        <p>Génération, suivi, signature et gestion utilisateur dans une interface unique.</p>
+      </div>
+      <div class="toolbar">
+        <span id="currentUserBadge" class="pill pill-muted"></span>
+        <button class="btn-secondary switch-theme" onclick="toggleTheme()">Clair / sombre</button>
+        <button class="btn-secondary" onclick="logout()">Déconnexion</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabGenerate" class="tab active" onclick="switchTab('generate')">Génération</button>
+      <button id="tabDashboard" class="tab" onclick="switchTab('dashboard')">Dashboard</button>
+      <button id="tabSignature" class="tab" onclick="switchTab('signature')">Signature</button>
+      <button id="tabUsers" class="tab" onclick="switchTab('users')">Gestion users</button>
+      <button id="tabSettings" class="tab" onclick="switchTab('settings')">Paramètres</button>
+    </div>
+
+    <section id="generateSection">
+      <div class="grid grid-2">
+        <div class="card glass-card">
+          <div class="section-title"><h3>Informations de la fiche</h3></div>
+          <div class="grid grid-2">
+            <div>
+              <label>Intitulé de session/stage</label>
+              <input id="intituleSession" type="text" />
+            </div>
+            <div>
+              <label>Date de la session/stage</label>
+              <input id="sessionDate" type="date" />
+            </div>
+            <div>
+              <label>Durée de la session/stage</label>
+              <input id="duree" type="text" />
+            </div>
+            <div>
+              <label>Lieu</label>
+              <input id="lieu" type="text" />
+            </div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <label>Modèle de thèmes/sujets</label>
+            <select id="themeModelSelect" onchange="applyThemeModel()"></select>
+          </div>
+          <div style="margin-top:14px;">
+            <label>Intitulés des thèmes/sujets abordés</label>
+            <textarea id="themesText"></textarea>
+          </div>
+          <div style="margin-top:14px;">
+            <label>Remarques des intervenants</label>
+            <textarea id="remarques"></textarea>
+          </div>
+        </div>
+
+        <div class="card glass-card">
+          <div class="section-title">
+            <h3>Agents à générer</h3>
+            <div class="toolbar">
+              <button class="btn-secondary" onclick="selectAllAgents(true)">Tout cocher</button>
+              <button class="btn-secondary" onclick="selectAllAgents(false)">Tout décocher</button>
+            </div>
+          </div>
+          <div>
+            <label>Recherche agent</label>
+            <input id="agentSearch" type="text" placeholder="Nom, prénom, matricule, sous-équipe" oninput="renderAgentList()" />
+          </div>
+          <div id="agentList" class="agent-list" style="margin-top:12px;"></div>
+          <div class="toolbar" style="margin-top:14px;">
+            <button class="btn-primary" onclick="generatePdfs()">Générer les PDF</button>
+          </div>
+          <p class="mini">Un seul PDF par agent et par mois. En cas de régénération, l’ancien PDF et l’ancien document source sont remplacés.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Résultats</h3>
+        <div id="results" class="results"></div>
+      </div>
+    </section>
+
+    <section id="dashboardSection" class="hidden">
+      <div class="card glass-card">
+        <div class="section-title">
+          <h3>Suivi mensuel</h3>
+          <div class="toolbar">
+            <div>
+              <label>Mois / année</label>
+              <input id="dashboardMonth" type="month" onchange="loadDashboard()" />
+            </div>
+            <button class="btn-secondary" onclick="shiftMonth(-1)">◀</button>
+            <button class="btn-secondary" onclick="shiftMonth(1)">▶</button>
+            <button class="btn-secondary" onclick="loadDashboard()">Actualiser</button>
+          </div>
+        </div>
+
+        <div id="dashboardStats" class="stats" style="margin-bottom:16px;"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Matricule</th>
+                <th>Nom & prénom</th>
+                <th>Sous-équipe</th>
+                <th>PDF</th>
+                <th>Sign. intervenant</th>
+                <th>Sign. agent</th>
+                <th>Date session</th>
+                <th>Intervenant</th>
+                <th>PDF</th>
+                <th>Doc source</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="signatureSection" class="hidden">
+      <div class="grid grid-2">
+        <div class="card glass-card">
+          <div class="section-title">
+            <h3 id="signatureMainTitle">Signature dédiée</h3>
+            <div class="toolbar">
+              <div>
+                <label>Mois / année</label>
+                <input id="signatureMonth" type="month" onchange="loadSignatureQueue()" />
+              </div>
+              <button class="btn-secondary" onclick="loadSignatureQueue()">Actualiser</button>
+            </div>
+          </div>
+          <p id="signatureIntroText" class="mini">L’intervenant signe sa propre case. L’agent connecté signe uniquement sa propre fiche.</p>
+          <div id="signatureCards" class="signature-cards" style="margin-top:12px;"></div>
+        </div>
+
+        <div id="signatureQuickCard" class="card">
+          <h3>Action rapide</h3>
+          <div class="signature-form-grid">
+            <div>
+              <label>Fiche</label>
+              <select id="quickSignatureRecord"></select>
+            </div>
+            <div>
+              <label>Type de signature</label>
+              <select id="quickSignatureType">
+                <option value="intervenant">Signature intervenant</option>
+                <option value="agent">Signature agent</option>
+              </select>
+            </div>
+            <div class="toolbar" style="align-items:end;">
+              <button class="btn-primary" onclick="submitQuickSignature()">Signer</button>
+            </div>
+          </div>
+
+          <div id="bulkSignatureBlock" style="margin-top:16px;">
+            <div class="notice">
+              <strong id="bulkSignatureTitle">Signature en lot</strong><br>
+              <span id="bulkSignatureHelp">Sélectionne plusieurs fiches dans la liste à gauche puis signe-les en une seule fois avec ton mot de passe.</span>
+            </div>
+            <div class="signature-form-grid" style="margin-top:12px;">
+              <div>
+                <label>Type de signature en lot</label>
+                <select id="bulkSignatureType"></select>
+              </div>
+              <div class="toolbar" style="align-items:end;">
+                <button class="btn-secondary" onclick="toggleSelectAllSignatureRows(true)">Tout sélectionner</button>
+                <button class="btn-secondary" onclick="toggleSelectAllSignatureRows(false)">Tout désélectionner</button>
+                <button class="btn-primary" onclick="submitBulkSignature()">Signer la sélection</button>
+              </div>
+            </div>
+          </div>
+          <p class="mini" style="margin-top:12px;">La signature est injectée dans le document source, puis le PDF est régénéré automatiquement avec la date de session de chaque fiche.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="usersSection" class="hidden">
+      <div class="grid grid-2">
+        <div class="card glass-card">
+          <div class="section-title">
+            <h3>Créer / modifier un utilisateur</h3>
+            <button class="btn-secondary" onclick="resetUserForm()">Nouveau</button>
+          </div>
+          <input type="hidden" id="userEditMode" value="" />
+          <div class="user-form-grid">
+            <div>
+              <label>UserID</label>
+              <input id="userFormId" type="text" placeholder="ex. hery.ny.aina" />
+            </div>
+            <div>
+              <label>Nom & prénom</label>
+              <input id="userFormName" type="text" />
+            </div>
+            <div>
+              <label>Rôle</label>
+              <select id="userFormRole" onchange="handleUserRoleChange()">
+                <option value="USER">USER</option>
+                <option value="ADMIN">ADMIN</option>
+                <option value="AGENT">AGENT</option>
+              </select>
+            </div>
+            <div>
+              <label>Titre signature</label>
+              <input id="userFormTitle" type="text" placeholder="Team leader" />
+            </div>
+            <div>
+              <label>Mot de passe</label>
+              <input id="userFormPassword" type="password" placeholder="laisser vide pour conserver" />
+            </div>
+            <div>
+              <label>Actif</label>
+              <select id="userFormActive">
+                <option value="true">Oui</option>
+                <option value="false">Non</option>
+              </select>
+            </div>
+            <div id="userAgentMatriculeWrap">
+              <label>Matricule agent</label>
+              <input id="userFormAgentMatricule" type="text" placeholder="ex. A00123" />
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:14px;">
+            <button class="btn-primary" onclick="saveUser()">Enregistrer</button>
+          </div>
+        </div>
+
+        <div class="card glass-card">
+          <div class="section-title"><h3>Utilisateurs</h3></div>
+          <div id="usersList" class="users-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="settingsSection" class="hidden">
+      <div class="grid grid-2">
+        <div class="card glass-card">
+          <h3>Paramètres généraux</h3>
+          <div class="notice" style="margin-bottom:14px;">
+            Le modèle doit être un Google Docs natif. La signature “Brittany Signature” sera tentée côté document ; si elle n’est pas disponible dans Google Docs, le script basculera sur une police cursive de secours.
+          </div>
+          <div>
+            <label>Nom de l’application</label>
+            <input id="appName" type="text" />
+          </div>
+          <div style="margin-top:12px;">
+            <label>ID du modèle Google Doc</label>
+            <input id="templateId" type="text" />
+          </div>
+          <div style="margin-top:12px;">
+            <label>ID du dossier de sortie Drive</label>
+            <input id="outputFolderId" type="text" />
+          </div>
+          <div style="margin-top:12px;" class="grid grid-3">
+            <div>
+              <label>Intitulé par défaut</label>
+              <input id="defaultTitle" type="text" />
+            </div>
+            <div>
+              <label>Durée par défaut</label>
+              <input id="defaultDuration" type="text" />
+            </div>
+            <div>
+              <label>Lieu par défaut</label>
+              <input id="defaultLocation" type="text" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card glass-card">
+          <div class="section-title">
+            <h3>Modèles de thèmes</h3>
+            <button class="btn-secondary" onclick="addThemeModelRow()">Ajouter</button>
+          </div>
+          <div id="themeModelsContainer"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Placeholders à conserver dans le modèle Google Doc</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Champ</th><th>Placeholder</th></tr></thead>
+            <tbody>
+              <tr><td>Intitulé de session/stage</td><td>{{INTITULE_SESSION}}</td></tr>
+              <tr><td>Date de la session/stage</td><td>{{DATE_SESSION}}</td></tr>
+              <tr><td>Durée de la session/stage</td><td>{{DUREE_SESSION}}</td></tr>
+              <tr><td>Lieu</td><td>{{LIEU}}</td></tr>
+              <tr><td>Intervenant</td><td>{{INTERVENANT}}</td></tr>
+              <tr><td>Thèmes / sujets abordés</td><td>{{THEMES_ABORDES}}</td></tr>
+              <tr><td>Matricule</td><td>{{AGENT_MATRICULE}}</td></tr>
+              <tr><td>Nom & prénom</td><td>{{AGENT_NOM_PRENOM}}</td></tr>
+              <tr><td>Sous-équipe</td><td>{{SOUS_EQUIPE}}</td></tr>
+              <tr><td>Signature agent</td><td>{{SIGNATURE}}</td></tr>
+              <tr><td>Remarques</td><td>{{REMARQUES}}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn-primary" onclick="saveSettings()">Enregistrer les paramètres</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ──── Toast notification system ────
+    function showToast(msg, type) {
+      // type: 'success' | 'error' | 'info'
+      let toast = document.getElementById('_toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = '_toast';
+        toast.style.cssText = 'position:fixed;bottom:28px;right:28px;z-index:9999;max-width:360px;' +
+          'padding:14px 18px;border-radius:16px;font-size:14px;font-weight:700;' +
+          'box-shadow:0 8px 32px rgba(0,0,0,.28);transition:opacity .3s ease,transform .3s ease;pointer-events:none;';
+        document.body.appendChild(toast);
+      }
+      const colors = {
+        success: 'background:linear-gradient(135deg,#35c276,#2aa864);color:#fff;',
+        error:   'background:linear-gradient(135deg,#d96a63,#b5544e);color:#fff;',
+        info:    'background:linear-gradient(135deg,#c7a755,#e2bc60);color:#161514;'
+      };
+      toast.style.cssText += colors[type] || colors.info;
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(8px)';
+      }, 3800);
+    }
+
+    // ──── Loading overlay ────
+    function showLoading(show, msg) {
+      let overlay = document.getElementById('_loadOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = '_loadOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:8888;display:flex;flex-direction:column;' +
+          'align-items:center;justify-content:center;gap:16px;background:rgba(12,12,13,.68);' +
+          'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:opacity .2s;';
+        overlay.innerHTML = '<div style="width:48px;height:48px;border:4px solid rgba(199,167,85,.3);' +
+          'border-top-color:#c7a755;border-radius:50%;animation:spin .9s linear infinite;"></div>' +
+          '<div id="_loadMsg" style="color:#f9f7f0;font-weight:700;font-size:15px;"></div>';
+        document.body.appendChild(overlay);
+        const style = document.createElement('style');
+        style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(style);
+      }
+      overlay.style.display = show ? 'flex' : 'none';
+      const msgEl = document.getElementById('_loadMsg');
+      if (msgEl) msgEl.textContent = msg || 'Chargement…';
+    }
+
+    const state = {
+      token: '',
+      currentUser: null,
+      settings: {},
+      agents: [],
+      users: [],
+      themeModels: [],
+      dashboardRows: [],
+      signatureRows: [],
+      dashboardPeriod: '',
+      activeTheme: localStorage.getItem('emargement_theme') || 'dark'
+    };
+
+    function rpc(fnName, ...args) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(err => reject(new Error(err && err.message ? err.message : err)))
+          [fnName](...args);
+      });
+    }
+
+    function applyTheme() {
+      document.body.classList.toggle('light', state.activeTheme === 'light');
+      localStorage.setItem('emargement_theme', state.activeTheme);
+    }
+
+    function toggleTheme() {
+      state.activeTheme = state.activeTheme === 'dark' ? 'light' : 'dark';
+      applyTheme();
+    }
+
+    async function handleLogin() {
+      const userId = document.getElementById('loginUserId').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      document.getElementById('loginError').textContent = '';
+      try {
+        const res = await rpc('login', userId, password);
+        state.token = res.token;
+        state.currentUser = res.user;
+        await bootstrap();
+        document.getElementById('loginView').classList.add('hidden');
+        document.getElementById('appView').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('loginError').textContent = err.message;
+      }
+    }
+
+    async function bootstrap() {
+      const data = await rpc('getBootstrapData', state.token);
+      state.settings = data.settings || {};
+      state.agents = data.agents || [];
+      state.users = data.users || [];
+      state.themeModels = (data.themeModels || []).filter(x => x.active !== false);
+
+      document.getElementById('appTitle').textContent = state.settings.appName || 'Émargement mensuel';
+      const badgeParts = [state.currentUser.name, state.currentUser.role];
+      if ((state.currentUser.role || '').toUpperCase() === 'AGENT' && state.currentUser.agentMatricule) badgeParts.push(state.currentUser.agentMatricule);
+      document.getElementById('currentUserBadge').textContent = badgeParts.join(' · ');
+      document.getElementById('intituleSession').value = state.settings.defaultTitle || '';
+      document.getElementById('duree').value = state.settings.defaultDuration || '';
+      document.getElementById('lieu').value = state.settings.defaultLocation || '';
+      document.getElementById('sessionDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('dashboardMonth').value = data.currentPeriod || new Date().toISOString().slice(0, 7);
+      document.getElementById('signatureMonth').value = data.currentPeriod || new Date().toISOString().slice(0, 7);
+
+      document.getElementById('appName').value = state.settings.appName || '';
+      document.getElementById('templateId').value = state.settings.templateId || '';
+      document.getElementById('outputFolderId').value = state.settings.outputFolderId || '';
+      document.getElementById('defaultTitle').value = state.settings.defaultTitle || '';
+      document.getElementById('defaultDuration').value = state.settings.defaultDuration || '';
+      document.getElementById('defaultLocation').value = state.settings.defaultLocation || '';
+
+      renderThemeSelect();
+      renderThemeModelsEditor();
+      renderAgentList();
+      renderUsers();
+      resetUserForm();
+      applyAccessRights();
+      await loadDashboard();
+      await loadSignatureQueue();
+    }
+
+    function applyAccessRights() {
+      const role = (state.currentUser.role || '').toUpperCase();
+      const isAdmin = role === 'ADMIN';
+      const isAgent = role === 'AGENT';
+
+      document.getElementById('tabUsers').style.display = isAdmin ? 'inline-flex' : 'none';
+      document.getElementById('tabSettings').style.display = isAdmin ? 'inline-flex' : 'none';
+      document.getElementById('tabGenerate').style.display = isAgent ? 'none' : 'inline-flex';
+      document.getElementById('tabDashboard').style.display = isAgent ? 'none' : 'inline-flex';
+
+      if (!isAdmin) {
+        document.getElementById('usersSection').classList.add('hidden');
+        document.getElementById('settingsSection').classList.add('hidden');
+      }
+
+      if (isAgent) {
+        document.getElementById('generateSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.add('hidden');
+        document.getElementById('usersSection').classList.add('hidden');
+        document.getElementById('settingsSection').classList.add('hidden');
+        document.getElementById('signatureMainTitle').textContent = 'Mes fiches à signer';
+        document.getElementById('signatureIntroText').textContent = 'Tu ne vois ici que tes propres PDF. Tu peux les signer un par un ou en lot avec ton mot de passe.';
+        switchTab('signature');
+      } else {
+        document.getElementById('signatureQuickCard').classList.remove('hidden');
+        document.getElementById('signatureMainTitle').textContent = 'Signature dédiée';
+        document.getElementById('signatureIntroText').textContent = 'L’intervenant signe sa propre case. L’agent connecté signe uniquement sa propre fiche.';
+      }
+      const bulkTitle = document.getElementById('bulkSignatureTitle');
+      const bulkHelp = document.getElementById('bulkSignatureHelp');
+      if (bulkTitle && bulkHelp) {
+        if (role === 'AGENT') {
+          bulkTitle.textContent = 'Signature agent en lot';
+          bulkHelp.textContent = 'Sélectionne une ou plusieurs de tes fiches non signées, puis signe-les en une fois.';
+        } else if (role === 'ADMIN') {
+          bulkTitle.textContent = 'Signature en lot';
+          bulkHelp.textContent = 'Choisis le type de signature à appliquer en lot sur les fiches sélectionnées, puis confirme avec ton mot de passe.';
+        } else {
+          bulkTitle.textContent = 'Signature intervenant en lot';
+          bulkHelp.textContent = 'Sélectionne une ou plusieurs de tes fiches, puis signe ta partie intervenant en une seule action.';
+        }
+      }
+      handleUserRoleChange();
+      updateQuickSignatureOptions();
+      updateBulkSignatureOptions();
+    }
+
+    function switchTab(tabName) {
+      const role = (state.currentUser && state.currentUser.role || '').toUpperCase();
+      if (role === 'AGENT' && tabName !== 'signature') tabName = 'signature';
+      const tabs = ['generate', 'dashboard', 'signature', 'users', 'settings'];
+      tabs.forEach(name => {
+        const section = document.getElementById(name + 'Section');
+        const tab = document.getElementById('tab' + capitalize(name));
+        if (section) section.classList.toggle('hidden', name !== tabName);
+        if (tab) tab.classList.toggle('active', name === tabName);
+      });
+    }
+
+    function capitalize(str) { return str.charAt(0).toUpperCase() + str.slice(1); }
+
+    function renderThemeSelect() {
+      const select = document.getElementById('themeModelSelect');
+      select.innerHTML = ['<option value="">-- Aucun modèle --</option>']
+        .concat(state.themeModels.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`))
+        .join('');
+    }
+
+    function applyThemeModel() {
+      const selected = document.getElementById('themeModelSelect').value;
+      const model = state.themeModels.find(x => x.name === selected);
+      document.getElementById('themesText').value = model ? model.content : '';
+    }
+
+    function renderAgentList() {
+      const query = document.getElementById('agentSearch').value.trim().toLowerCase();
+      const agents = state.agents.filter(agent => {
+        const txt = `${agent.matricule} ${agent.fullName} ${agent.sousEquipe}`.toLowerCase();
+        return !query || txt.includes(query);
+      });
+      const container = document.getElementById('agentList');
+      container.innerHTML = agents.map(agent => `
+        <label class="agent-item">
+          <div class="agent-check-box">
+            <input type="checkbox" class="agent-check" value="${escapeHtml(agent.matricule)}" />
+            <div class="agent-check-indicator"></div>
+          </div>
+          <div class="agent-meta" style="flex:1;">
+            <strong>${escapeHtml(agent.fullName || agent.matricule)}</strong>
+            <span class="mini">${escapeHtml(agent.matricule)}${agent.sousEquipe ? ' · ' + escapeHtml(agent.sousEquipe) : ''}</span>
+          </div>
+          <span class="mini" style="opacity:.5;">👤</span>
+        </label>
+      `).join('') || '<p class="mini" style="padding:8px;">Aucun agent trouvé.</p>';
+    }
+
+    function selectAllAgents(checked) {
+      document.querySelectorAll('.agent-check').forEach(el => el.checked = checked);
+    }
+
+    function getSelectedMatricules() {
+      return Array.from(document.querySelectorAll('.agent-check:checked')).map(el => el.value);
+    }
+
+    async function generatePdfs() {
+      const payload = {
+        intituleSession: document.getElementById('intituleSession').value.trim(),
+        sessionDate: document.getElementById('sessionDate').value,
+        duree: document.getElementById('duree').value.trim(),
+        lieu: document.getElementById('lieu').value.trim(),
+        themeModelName: document.getElementById('themeModelSelect').value,
+        themesText: document.getElementById('themesText').value.trim(),
+        remarques: document.getElementById('remarques').value.trim(),
+        selectedMatricules: getSelectedMatricules()
+      };
+      const box = document.getElementById('results');
+      showLoading(true, 'Génération des PDF en cours…');
+      box.innerHTML = '';
+      try {
+        const res = await rpc('generateAttendancePdfs', state.token, payload);
+        showLoading(false);
+        box.innerHTML = (res.results || []).map(item => `
+          <div class="result-item ${item.success ? 'success' : 'failure'}">
+            <div><strong>${item.success ? '✅' : '❌'} ${escapeHtml(item.agent || item.matricule || '')}</strong></div>
+            <div class="mini">${escapeHtml(item.message || '')}</div>
+            ${item.pdfUrl ? `<div style="margin-top:6px;"><a class="btn-primary" style="display:inline-block;padding:7px 14px;border-radius:10px;text-decoration:none;font-size:13px;" href="${item.pdfUrl}" target="_blank">📄 Ouvrir le PDF</a></div>` : ''}
+          </div>
+        `).join('') || '<div class="result-item">Aucun résultat.</div>';
+        const period = payload.sessionDate ? payload.sessionDate.slice(0, 7) : res.period;
+        if (period) {
+          document.getElementById('dashboardMonth').value = period;
+          document.getElementById('signatureMonth').value = period;
+        }
+        await loadDashboard();
+        await loadSignatureQueue();
+        showLoading(false);
+      } catch (err) {
+        showLoading(false);
+        box.innerHTML = `<div class="result-item" style="border-color:#d96a63;">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function shiftMonth(delta) {
+      const input = document.getElementById('dashboardMonth');
+      const current = input.value || new Date().toISOString().slice(0, 7);
+      const [y, m] = current.split('-').map(Number);
+      const d = new Date(y, m - 1 + delta, 1);
+      const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      input.value = next;
+      loadDashboard();
+    }
+
+    async function loadDashboard() {
+      const period = document.getElementById('dashboardMonth').value || new Date().toISOString().slice(0, 7);
+      const data = await rpc('getDashboard', state.token, period);
+      state.dashboardRows = data.rows || [];
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const rows = state.dashboardRows || [];
+      const pdfGenerated = rows.filter(r => r.statutPdf === 'Généré').length;
+      const signedInter = rows.filter(r => r.statutSignatureIntervenant === 'Signé').length;
+      const signedAgent = rows.filter(r => r.statutSignatureAgent === 'Signé').length;
+      document.getElementById('dashboardStats').innerHTML = `
+        <div class="stat"><div class="mini">Agents</div><div class="value">${rows.length}</div></div>
+        <div class="stat"><div class="mini">PDF générés</div><div class="value">${pdfGenerated}</div></div>
+        <div class="stat"><div class="mini">Signatures intervenant</div><div class="value">${signedInter}</div></div>
+        <div class="stat"><div class="mini">Signatures agent</div><div class="value">${signedAgent}</div></div>
+      `;
+      document.getElementById('dashboardBody').innerHTML = rows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.matricule || '')}</td>
+          <td>${escapeHtml(row.name || '')}</td>
+          <td>${escapeHtml(row.sousEquipe || '')}</td>
+          <td>${renderBadge(row.statutPdf, 'pdf')}</td>
+          <td>${renderBadge(row.statutSignatureIntervenant, 'signature')}</td>
+          <td>${renderBadge(row.statutSignatureAgent, 'signature')}</td>
+          <td>${escapeHtml(row.dateSession || '')}</td>
+          <td>${escapeHtml(row.intervenant || '')}</td>
+          <td>${row.pdfUrl ? `<a href="${row.pdfUrl}" target="_blank">Ouvrir</a>` : '<span class="mini">-</span>'}</td>
+          <td>${row.sourceDocUrl ? `<a href="${row.sourceDocUrl}" target="_blank">Source</a>` : '<span class="mini">-</span>'}</td>
+          <td>
+            ${row.rowNumber ? `<div class="status-actions">
+              ${row.canSignIntervenant ? `<button class="btn-success" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ TL</button>` : ''}
+              ${row.canSignAgent ? `<button class="btn-secondary" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Amb.</button>` : ''}
+            </div>` : '<span class="mini">-</span>'}
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="11" class="mini">Aucune donnée.</td></tr>';
+    }
+
+    function renderBadge(status, type) {
+      if (status === 'Signé')    return `<span class="pill pill-ok">✅ Signé</span>`;
+      if (status === 'Généré')   return `<span class="pill pill-ok">📄 Généré</span>`;
+      if (type === 'pdf')        return `<span class="pill pill-muted">⏳ ${escapeHtml(status || 'Non généré')}</span>`;
+      return `<span class="pill pill-warn">✏️ ${escapeHtml(status || 'À signer')}</span>`;
+    }
+
+    async function signFromRow(rowNumber, signatureType) {
+      const row = (state.signatureRows || []).find(r => Number(r.rowNumber) === Number(rowNumber)) || (state.dashboardRows || []).find(r => Number(r.rowNumber) === Number(rowNumber));
+      const label = row ? `${row.name || ''} — ${row.dateSession || ''}` : `Ligne ${rowNumber}`;
+      openSignatureModal({
+        mode: 'single',
+        rowNumber: Number(rowNumber),
+        signatureType: signatureType,
+        title: signatureType === 'intervenant' ? 'Signature intervenant' : 'Signature ambassadeur',
+        summary: `Fiche : ${escapeHtml(label)}`
+      });
+    }
+
+    async function loadSignatureQueue() {
+      const period = document.getElementById('signatureMonth').value || new Date().toISOString().slice(0, 7);
+      const data = await rpc('getSignatureQueue', state.token, period);
+      state.signatureRows = data.rows || [];
+      renderSignatureCards();
+      renderQuickSignatureSelect();
+    }
+
+    function renderSignatureCards() {
+      const box = document.getElementById('signatureCards');
+      const isAdminRole = ((state.currentUser && state.currentUser.role) || '').toUpperCase() === 'ADMIN';
+      box.innerHTML = state.signatureRows.map(row => `
+        <div class="signature-card">
+          <div class="section-title">
+            <div>
+              <strong>${escapeHtml(row.name || '')}</strong>
+              <div class="mini">${escapeHtml(row.matricule || '')} · ${escapeHtml(row.sousEquipe || '')}</div>
+            </div>
+            <div class="toolbar">
+              ${(row.canSignIntervenant || row.canSignAgent) ? `<label class="checkbox-pill"><input class="signature-select" type="checkbox" value="${row.rowNumber}" /> Sélectionner</label>` : ''}
+              ${renderBadge(row.statutSignatureIntervenant, 'signature')}
+              ${renderBadge(row.statutSignatureAgent, 'signature')}
+            </div>
+          </div>
+          <div class="mini" style="margin-bottom:8px;">
+            📅 Session : ${escapeHtml(row.dateSession || '-')} &nbsp;·&nbsp; 👤 Intervenant : ${escapeHtml(row.intervenant || '-')}
+          </div>
+          ${(row.statutSignatureIntervenant === 'Signé' || row.statutSignatureAgent === 'Signé') ? buildSignaturePreviewHtml(row) : ''}
+          <div class="status-actions" style="margin-top:8px;">
+            ${row.canSignIntervenant ? `<button class="btn-success" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ Signer (Team leader)</button>` : ''}
+            ${row.canSignAgent ? `<button class="btn-secondary" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Signer (Ambassadeur)</button>` : ''}
+            ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${row.pdfUrl}" target="_blank">📄 PDF</a>` : ''}
+            ${row.sourceDocUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${row.sourceDocUrl}" target="_blank">📝 Doc</a>` : ''}
+          </div>
+        </div>
+      `).join('') || '<div class="signature-card"><span class="mini">Aucune fiche à afficher sur cette période.</span></div>';
+    }
+
+    function renderQuickSignatureSelect() {
+      const select = document.getElementById('quickSignatureRecord');
+      select.innerHTML = ['<option value="">-- Choisir une fiche --</option>']
+        .concat(state.signatureRows.filter(row => row.canSignIntervenant || row.canSignAgent).map(row => `<option value="${row.rowNumber}">${escapeHtml(row.matricule)} - ${escapeHtml(row.name)} - ${escapeHtml(row.dateSession || '')}</option>`))
+        .join('');
+      updateQuickSignatureOptions();
+      updateBulkSignatureOptions();
+    }
+
+    function updateQuickSignatureOptions() {
+      const role = (state.currentUser && state.currentUser.role || '').toUpperCase();
+      const select = document.getElementById('quickSignatureType');
+      if (!select) return;
+      if (role === 'AGENT') {
+        select.innerHTML = '<option value="agent">Signature ambassadeur</option>';
+      } else if (role === 'ADMIN') {
+        select.innerHTML = '<option value="intervenant">Signature intervenant</option><option value="agent">Signature ambassadeur</option>';
+      } else {
+        select.innerHTML = '<option value="intervenant">Signature intervenant</option>';
+      }
+    }
+
+    function updateBulkSignatureOptions() {
+      const role = (state.currentUser && state.currentUser.role || '').toUpperCase();
+      const select = document.getElementById('bulkSignatureType');
+      if (!select) return;
+      if (role === 'AGENT') {
+        select.innerHTML = '<option value="agent">Signature ambassadeur</option>';
+      } else if (role === 'ADMIN') {
+        select.innerHTML = '<option value="intervenant">Signature intervenant</option><option value="agent">Signature ambassadeur</option>';
+      } else {
+        select.innerHTML = '<option value="intervenant">Signature intervenant</option>';
+      }
+    }
+
+    async function submitQuickSignature() {
+      const rowNumber = Number(document.getElementById('quickSignatureRecord').value || 0);
+      const signatureType = document.getElementById('quickSignatureType').value;
+      if (!rowNumber) return showToast('Choisis une fiche.', 'error');
+      const row = (state.signatureRows || []).find(r => Number(r.rowNumber) === rowNumber);
+      const label = row ? `${row.name || ''} — ${row.dateSession || ''}` : `Ligne ${rowNumber}`;
+      openSignatureModal({
+        mode: 'single',
+        rowNumber,
+        signatureType,
+        title: signatureType === 'intervenant' ? 'Signature intervenant' : 'Signature ambassadeur',
+        summary: `Fiche : ${escapeHtml(label)}`
+      });
+    }
+
+
+    function getSelectedSignatureRows() {
+      return Array.from(document.querySelectorAll('.signature-select:checked')).map(el => Number(el.value || 0)).filter(Boolean);
+    }
+
+    function toggleSelectAllSignatureRows(checked) {
+      document.querySelectorAll('.signature-select').forEach(el => { el.checked = !!checked; });
+    }
+
+    function submitBulkSignature() {
+      const rows = getSelectedSignatureRows();
+      const signatureType = document.getElementById('bulkSignatureType').value;
+      if (!rows.length) return showToast('Sélectionne au moins une fiche.', 'error');
+      if (!signatureType) return showToast('Choisis le type de signature.', 'error');
+
+      const typeLabel = signatureType === 'agent' ? 'ambassadeur' : 'intervenant';
+      openSignatureModal({
+        mode: 'bulk',
+        rowNumbers: rows,
+        signatureType,
+        title: 'Signature en lot',
+        summary: `Tu vas signer ${rows.length} fiche(s) comme ${typeLabel}. La date de session propre à chaque fiche sera conservée.`
+      });
+    }
+
+    function openSignatureModal(config) {
+      state.signatureModal = config || null;
+      document.getElementById('signatureModalTitle').textContent = (config && config.title) || 'Signature';
+      document.getElementById('signatureModalSummary').innerHTML = (config && config.summary) || '';
+      document.getElementById('signatureModalPassword').value = '';
+      document.getElementById('signatureModal').classList.remove('hidden');
+      document.getElementById('signatureModalPassword').focus();
+    }
+
+    function closeSignatureModal() {
+      state.signatureModal = null;
+      document.getElementById('signatureModal').classList.add('hidden');
+      document.getElementById('signatureModalPassword').value = '';
+    }
+
+    async function confirmSignatureModal() {
+      const modal = state.signatureModal;
+      const password = document.getElementById('signatureModalPassword').value;
+      if (!modal) return;
+      if (!password) return showToast('Entre le mot de passe.', 'error');
+
+      try {
+        showLoading(true, 'Signature en cours…');
+        if (modal.mode === 'bulk') {
+          const result = await rpc('bulkSignRecords', state.token, { rowNumbers: modal.rowNumbers || [], signatureType: modal.signatureType, password });
+          closeSignatureModal();
+          showLoading(false);
+          await loadDashboard();
+          await loadSignatureQueue();
+          const skippedCount = (result && result.skipped ? result.skipped.length : 0);
+          alert(skippedCount
+            ? `${result.updatedCount || 0} fiche(s) signée(s). ${skippedCount} fiche(s) ignorée(s).`
+            : `${result.updatedCount || 0} fiche(s) signée(s) et PDF régénérés.`);
+        } else {
+          await rpc('signRecord', state.token, { rowNumber: modal.rowNumber, signatureType: modal.signatureType, password });
+          closeSignatureModal();
+          showLoading(false);
+          await loadDashboard();
+          await loadSignatureQueue();
+          showToast('✅ Signature appliquée — PDF régénéré', 'success');
+        }
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      }
+    }
+    function renderThemeModelsEditor() {
+      const container = document.getElementById('themeModelsContainer');
+      const models = state.themeModels.length ? state.themeModels : [{ name: '', content: '', active: true }];
+      container.innerHTML = models.map((item, idx) => `
+        <div class="card" style="padding:12px; margin-bottom:10px;">
+          <div class="grid grid-3">
+            <div>
+              <label>Nom</label>
+              <input type="text" class="theme-name" value="${escapeAttr(item.name || '')}" />
+            </div>
+            <div>
+              <label>Actif</label>
+              <select class="theme-active">
+                <option value="true" ${item.active !== false ? 'selected' : ''}>Oui</option>
+                <option value="false" ${item.active === false ? 'selected' : ''}>Non</option>
+              </select>
+            </div>
+            <div class="toolbar" style="align-items:end;">
+              <button class="btn-danger" type="button" onclick="removeThemeModelRow(${idx})">Supprimer</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <label>Contenu</label>
+            <textarea class="theme-content" style="min-height:90px;">${escapeHtml(item.content || '')}</textarea>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addThemeModelRow() {
+      state.themeModels.push({ name: '', content: '', active: true });
+      renderThemeModelsEditor();
+    }
+
+    function removeThemeModelRow(index) {
+      state.themeModels.splice(index, 1);
+      renderThemeModelsEditor();
+    }
+
+    function collectThemeModels() {
+      return Array.from(document.querySelectorAll('#themeModelsContainer .card')).map(card => ({
+        name: card.querySelector('.theme-name').value.trim(),
+        content: card.querySelector('.theme-content').value.trim(),
+        active: card.querySelector('.theme-active').value === 'true'
+      })).filter(item => item.name);
+    }
+
+    async function saveSettings() {
+      const payload = {
+        appName: document.getElementById('appName').value.trim(),
+        templateId: document.getElementById('templateId').value.trim(),
+        outputFolderId: document.getElementById('outputFolderId').value.trim(),
+        defaultTitle: document.getElementById('defaultTitle').value.trim(),
+        defaultDuration: document.getElementById('defaultDuration').value.trim(),
+        defaultLocation: document.getElementById('defaultLocation').value.trim(),
+        themeModels: collectThemeModels()
+      };
+      try {
+        await rpc('saveSettings', state.token, payload);
+        showToast('✅ Paramètres enregistrés', 'success');
+        await bootstrap();
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      }
+    }
+
+    function resetUserForm() {
+      document.getElementById('userEditMode').value = '';
+      document.getElementById('userFormId').value = '';
+      document.getElementById('userFormId').disabled = false;
+      document.getElementById('userFormName').value = '';
+      document.getElementById('userFormRole').value = 'USER';
+      document.getElementById('userFormTitle').value = 'Team leader';
+      document.getElementById('userFormPassword').value = '';
+      document.getElementById('userFormActive').value = 'true';
+      document.getElementById('userFormAgentMatricule').value = '';
+      handleUserRoleChange();
+    }
+
+    function handleUserRoleChange() {
+      const role = document.getElementById('userFormRole') ? document.getElementById('userFormRole').value : 'USER';
+      const wrap = document.getElementById('userAgentMatriculeWrap');
+      if (wrap) wrap.style.display = role === 'AGENT' ? 'block' : 'none';
+    }
+
+    function renderUsers() {
+      const box = document.getElementById('usersList');
+      box.innerHTML = state.users.map((user, idx) => `
+        <div class="user-row-card">
+          <div style="flex:1;">
+            <strong>${escapeHtml(user.name)}</strong>
+            <div class="mini" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:2px;">
+              <span class="pill ${user.role === 'ADMIN' ? 'pill-ok' : user.role === 'AGENT' ? 'pill-warn' : 'pill-muted'}" style="font-size:10px;">${escapeHtml(user.role)}</span>
+              <span>${escapeHtml(user.userId)}</span>
+              ${user.title ? `<span>· ${escapeHtml(user.title)}</span>` : ''}
+            </div>
+            ${user.agentMatricule ? `<div class="mini">Matricule agent : ${escapeHtml(user.agentMatricule)}</div>` : ''}
+            <div class="mini">${user.active ? 'Actif' : 'Inactif'}</div>
+          </div>
+          <div class="toolbar">
+            <button class="btn-secondary" onclick="editUserByIndex(${idx})">Modifier</button>
+            <button class="btn-danger" onclick="deleteUser('${escapeJs(user.userId)}')">Supprimer</button>
+          </div>
+        </div>
+      `).join('') || '<p class="mini">Aucun utilisateur.</p>';
+    }
+
+    function editUserByIndex(index) {
+      const user = state.users[index];
+      if (!user) return;
+      document.getElementById('userEditMode').value = 'edit';
+      document.getElementById('userFormId').value = user.userId || '';
+      document.getElementById('userFormId').disabled = true;
+      document.getElementById('userFormName').value = user.name || '';
+      document.getElementById('userFormRole').value = user.role || 'USER';
+      document.getElementById('userFormTitle').value = user.title || 'Team leader';
+      document.getElementById('userFormPassword').value = '';
+      document.getElementById('userFormActive').value = user.active ? 'true' : 'false';
+      document.getElementById('userFormAgentMatricule').value = user.agentMatricule || '';
+      handleUserRoleChange();
+      switchTab('users');
+    }
+
+    async function saveUser() {
+      const payload = {
+        userId: document.getElementById('userFormId').value.trim(),
+        name: document.getElementById('userFormName').value.trim(),
+        role: document.getElementById('userFormRole').value,
+        title: document.getElementById('userFormTitle').value.trim(),
+        password: document.getElementById('userFormPassword').value,
+        active: document.getElementById('userFormActive').value === 'true',
+        agentMatricule: document.getElementById('userFormAgentMatricule').value.trim()
+      };
+      try {
+        await rpc('saveUserAdmin', state.token, payload);
+        await bootstrap();
+        switchTab('users');
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!confirm(`Supprimer l'utilisateur ${userId} ?`)) return;
+      try {
+        await rpc('deleteUserAdmin', state.token, userId);
+        await bootstrap();
+      } catch (err) {
+        showToast('❌ ' + err.message, 'error');
+      }
+    }
+
+    function logout() {
+      rpc('logout', state.token).finally(() => {
+        state.token = '';
+        state.currentUser = null;
+        document.getElementById('appView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+        document.getElementById('loginPassword').value = '';
+      });
+    }
+
+    // SVG preview mini pour les cartes de signature
+    function buildSignaturePreviewHtml(row) {
+      const parts = [];
+      if (row.statutSignatureIntervenant === 'Signé' && row.signatureIntervenantAt) {
+        const name = escapeHtml(row.intervenant || 'Team leader');
+        const date = escapeHtml(row.signatureIntervenantAt || row.dateSession || '');
+        parts.push(`<div class="sig-preview">
+          <div class="sig-preview-label">✅ Signature Team leader</div>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 80" style="height:56px;">
+            <path d="M12 40 C36 34, 50 42, 80 37 S130 43, 170 37 S220 42, 270 37" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
+            <text x="14" y="38" font-size="22" font-style="italic" font-family="serif" fill="currentColor">${name}</text>
+            <line x1="12" y1="52" x2="270" y2="52" stroke="currentColor" stroke-width="1" opacity=".4"/>
+            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Team leader · ${date}</text>
+          </svg>
+        </div>`);
+      }
+      if (row.statutSignatureAgent === 'Signé' && row.signatureAgentAt) {
+        const prenom = escapeHtml((row.prenom || row.name || 'Agent').split(' ')[0]);
+        const date   = escapeHtml(row.signatureAgentAt || row.dateSession || '');
+        const mat    = escapeHtml(row.matricule || '');
+        parts.push(`<div class="sig-preview">
+          <div class="sig-preview-label">✅ Signature Ambassadeur</div>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 80" style="height:56px;">
+            <path d="M12 40 C36 34, 50 42, 80 37 S130 43, 170 37 S220 42, 270 37" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
+            <text x="14" y="38" font-size="22" font-style="italic" font-family="serif" fill="currentColor">${prenom}</text>
+            <line x1="12" y1="52" x2="270" y2="52" stroke="currentColor" stroke-width="1" opacity=".4"/>
+            <text x="14" y="66" font-size="11" font-family="sans-serif" fill="currentColor" opacity=".6">Ambassadeur · ${mat} · ${date}</text>
+          </svg>
+        </div>`);
+      }
+      return parts.join('');
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeAttr(str) { return escapeHtml(str).replace(/\n/g, '&#10;'); }
+    function escapeJs(str) { return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      applyTheme();
+      ['loginUserId', 'loginPassword'].forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            handleLogin();
+          }
+        });
+      });
+    });
+  </script>
+
+  <div id="signatureModal" class="modal-backdrop hidden">
+    <div class="modal-panel">
+      <h3 id="signatureModalTitle">Signer</h3>
+      <div id="signatureModalSummary" class="modal-summary mini" style="margin-top:10px;"></div>
+      <div style="margin-top:14px;">
+        <label>Mot de passe</label>
+        <input id="signatureModalPassword" type="password" placeholder="Mot de passe" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeSignatureModal()">Annuler</button>
+        <button class="btn-primary" onclick="confirmSignatureModal()">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
