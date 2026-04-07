@@ -258,6 +258,79 @@
         <button class="btn-secondary switch-theme" onclick="toggleTheme()">Clair / sombre</button>
       </div>
       <p id="loginError" class="mini" style="color:#d96a63; margin-top:12px;"></p>
+      <div style="margin-top:18px;text-align:center;border-top:1px solid var(--line);padding-top:14px;">
+        <p class="mini">Tu dois passer un quiz ?</p>
+        <button class="btn-secondary" onclick="showQuizAccess()">Accéder à un Quiz</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Vue participant Quiz (hors connexion) ── -->
+  <div id="quizParticipantView" class="login-wrap hidden">
+    <div class="card glass-card" style="width:min(640px,100%);">
+
+      <!-- Étape 1 : saisie token + matricule -->
+      <div id="quizStep1">
+        <div style="text-align:center;margin-bottom:14px;">
+          <div style="font-size:36px;margin-bottom:6px;">📝</div>
+          <h2 style="margin:0;">Quiz</h2>
+        </div>
+        <p class="muted">Saisis le token fourni par ton responsable et ton matricule.</p>
+        <div class="grid grid-2" style="margin-top:14px;">
+          <div>
+            <label>Token de session</label>
+            <input id="quizTokenInput" type="text" placeholder="Ex. A1B2C3D4" />
+          </div>
+          <div>
+            <label>Matricule</label>
+            <input id="quizMatriculeInput" type="text" placeholder="Ex. 3891" />
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn-primary" onclick="quizAccessStep1()">Continuer</button>
+          <button class="btn-secondary" onclick="hideQuizAccess()">Retour</button>
+        </div>
+        <p id="quizAccessError" class="mini" style="color:#d96a63;margin-top:10px;"></p>
+      </div>
+
+      <!-- Étape 2 : confirmation identité (agent reconnu ou stagiaire) -->
+      <div id="quizStep2" class="hidden">
+        <h3 id="quizStep2Title">Confirme tes informations</h3>
+        <div id="quizStep2AgentInfo" class="notice" style="margin-bottom:12px;"></div>
+        <div id="quizStep2ExterneForm" class="hidden">
+          <p class="mini">Matricule non reconnu. Saisis tes informations :</p>
+          <div class="grid grid-3" style="margin-top:10px;">
+            <div><label>Nom</label><input id="quizExterneNom" type="text" /></div>
+            <div><label>Prénom</label><input id="quizExternePrenom" type="text" /></div>
+            <div><label>Groupe de formation</label><input id="quizExterneGroupe" type="text" /></div>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:14px;">
+          <button class="btn-primary" onclick="quizAccessStep2()">Commencer le quiz</button>
+          <button class="btn-secondary" onclick="quizBackToStep1()">Retour</button>
+        </div>
+      </div>
+
+      <!-- Étape 3 : le quiz lui-même -->
+      <div id="quizStep3" class="hidden">
+        <div class="section-title">
+          <h3 id="quizTitre"></h3>
+          <span id="quizProgress" class="pill pill-muted"></span>
+        </div>
+        <p id="quizDescription" class="mini" style="margin-bottom:14px;"></p>
+        <div id="quizQuestionsContainer"></div>
+        <div class="toolbar" style="margin-top:18px;">
+          <button class="btn-primary" onclick="quizSubmit()">Soumettre mes réponses</button>
+        </div>
+      </div>
+
+      <!-- Étape 4 : résultat -->
+      <div id="quizStep4" class="hidden" style="text-align:center;">
+        <div style="font-size:48px;margin-bottom:10px;">✅</div>
+        <h2>Merci !</h2>
+        <p id="quizResultText" class="muted"></p>
+        <button class="btn-secondary" style="margin-top:16px;" onclick="hideQuizAccess()">Fermer</button>
+      </div>
     </div>
   </div>
 
@@ -279,6 +352,7 @@
       <button id="tabImport" class="tab" onclick="switchTab('import')">Import en masse</button>
       <button id="tabDashboard" class="tab" onclick="switchTab('dashboard')">Dashboard</button>
       <button id="tabSignature" class="tab" onclick="switchTab('signature')">Signature</button>
+      <button id="tabQuiz" class="tab" onclick="switchTab('quiz')">Quiz</button>
       <button id="tabUsers" class="tab" onclick="switchTab('users')">Gestion users</button>
       <button id="tabSettings" class="tab" onclick="switchTab('settings')">Paramètres</button>
     </div>
@@ -498,6 +572,166 @@
       </div>
     </section>
 
+    <!-- ══════════ ONGLET QUIZ (Admin) ══════════ -->
+    <section id="quizSection" class="hidden">
+      <div class="grid grid-2">
+        <!-- Colonne gauche : modèles + sessions -->
+        <div>
+          <!-- Modèles de quiz -->
+          <div class="card glass-card">
+            <div class="section-title">
+              <h3>Modèles de quiz</h3>
+              <button class="btn-secondary" onclick="resetQuizModeleForm()">Nouveau modèle</button>
+            </div>
+            <input type="hidden" id="quizModeleEditId" value="" />
+            <div>
+              <label>Titre</label>
+              <input id="quizModeleTitre" type="text" placeholder="Ex. Évaluation sécurité" />
+            </div>
+            <div style="margin-top:10px;">
+              <label>Description</label>
+              <input id="quizModeleDescription" type="text" placeholder="Description optionnelle" />
+            </div>
+            <div style="margin-top:10px;">
+              <label>Questions</label>
+              <div id="quizQuestionsEditor"></div>
+              <button class="btn-secondary" style="margin-top:8px;" onclick="addQuizQuestion()">+ Ajouter une question</button>
+            </div>
+            <div class="toolbar" style="margin-top:14px;">
+              <button class="btn-primary" onclick="saveQuizModele()">Enregistrer le modèle</button>
+            </div>
+          </div>
+
+          <div class="card glass-card" style="margin-top:14px;">
+            <div class="section-title"><h3>Modèles existants</h3></div>
+            <div id="quizModelesList" class="users-list"></div>
+          </div>
+        </div>
+
+        <!-- Colonne droite : sessions -->
+        <div>
+          <div class="card glass-card">
+            <div class="section-title">
+              <h3>Sessions de quiz</h3>
+              <button class="btn-secondary" onclick="resetQuizSessionForm()">Nouvelle session</button>
+            </div>
+            <input type="hidden" id="quizSessionEditId" value="" />
+            <div class="grid grid-2">
+              <div>
+                <label>Modèle</label>
+                <select id="quizSessionModele"></select>
+              </div>
+              <div>
+                <label>Titre de la session</label>
+                <input id="quizSessionTitre" type="text" />
+              </div>
+              <div>
+                <label>Date</label>
+                <input id="quizSessionDate" type="date" />
+              </div>
+              <div>
+                <label>Lieu</label>
+                <input id="quizSessionLieu" type="text" />
+              </div>
+              <div>
+                <label>Durée</label>
+                <input id="quizSessionDuree" type="text" placeholder="Ex. 30 min" />
+              </div>
+            </div>
+            <div class="toolbar" style="margin-top:14px;">
+              <button class="btn-primary" onclick="saveQuizSession()">Enregistrer la session</button>
+            </div>
+          </div>
+
+          <div class="card glass-card" style="margin-top:14px;">
+            <div class="section-title"><h3>Sessions existantes</h3></div>
+            <div id="quizSessionsList" class="users-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Résultats / réponses -->
+      <div class="card glass-card" style="margin-top:16px;">
+        <div class="section-title">
+          <h3>Résultats des quiz</h3>
+          <div class="toolbar">
+            <div>
+              <label>Session</label>
+              <select id="quizResultsSessionFilter" onchange="renderQuizResults()">
+                <option value="">-- Toutes --</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Participant</th>
+                <th>Matricule</th>
+                <th>Groupe</th>
+                <th>Score</th>
+                <th>Statut</th>
+                <th>Soumis le</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="quizResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Import réponses Google Forms -->
+      <div class="card glass-card" style="margin-top:16px;" id="quizImportCard">
+        <div class="section-title"><h3>Importer des réponses (Google Forms / Sheet)</h3></div>
+        <p class="mini muted" style="margin-bottom:12px;">Importez les réponses d'un quiz réalisé via Google Forms dont les résultats sont dans un Google Sheet.</p>
+        <div class="grid grid-2">
+          <div>
+            <label>Session de quiz cible</label>
+            <select id="quizImportSessionSelect" onchange="onQuizImportSessionChange()"></select>
+          </div>
+          <div>
+            <label>URL du Google Sheet (réponses)</label>
+            <input id="quizImportSheetUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </div>
+        </div>
+        <div class="grid grid-2" style="margin-top:10px;">
+          <div>
+            <label class="mini">Ligne de départ (données)</label>
+            <input id="quizImportStartRow" type="number" value="2" min="1" style="width:80px;" />
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <p class="mini" style="margin-bottom:6px;"><strong>Colonnes d'identification</strong> (lettres de colonne dans le Sheet)</p>
+          <div class="grid grid-4" style="gap:8px;">
+            <div><label class="mini">Matricule</label><input id="quizImportColMatricule" type="text" value="B" style="width:60px;" /></div>
+            <div><label class="mini">Nom</label><input id="quizImportColNom" type="text" value="C" style="width:60px;" /></div>
+            <div><label class="mini">Prénom</label><input id="quizImportColPrenom" type="text" value="D" style="width:60px;" /></div>
+            <div><label class="mini">Groupe</label><input id="quizImportColGroupe" type="text" value="E" style="width:60px;" /></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <p class="mini" style="margin-bottom:6px;"><strong>Mapping des questions</strong> (colonne de chaque réponse dans le Sheet)</p>
+          <div id="quizImportMappings"><p class="mini muted">Sélectionnez une session pour voir les questions.</p></div>
+        </div>
+        <div class="toolbar" style="margin-top:14px;">
+          <button class="btn-primary" onclick="importQuizFromSheet()">Importer les réponses</button>
+        </div>
+      </div>
+
+      <!-- Modal de correction -->
+      <div id="quizGradeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+        <div class="modal-panel" style="width:min(720px,100%);max-height:90vh;overflow-y:auto;">
+          <h3 id="quizGradeTitle">Correction</h3>
+          <div id="quizGradeContent"></div>
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeQuizGradeModal()">Annuler</button>
+            <button class="btn-primary" onclick="submitQuizGrade()">Enregistrer la note</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="usersSection" class="hidden">
       <div class="grid grid-2">
         <div class="card glass-card">
@@ -687,7 +921,13 @@
       dashboardRows: [],
       signatureRows: [],
       dashboardPeriod: '',
-      activeTheme: localStorage.getItem('emargement_theme') || 'dark'
+      activeTheme: localStorage.getItem('emargement_theme') || 'dark',
+      // Quiz
+      quizModeles: [],
+      quizSessions: [],
+      quizReponses: [],
+      quizParticipant: null,   // données côté participant (hors connexion)
+      quizQuestions: []        // questions en cours d'édition dans le modèle
     };
 
     function rpc(fnName, ...args) {
@@ -764,6 +1004,12 @@
       applyAccessRights();
       await loadDashboard();
       await loadSignatureQueue();
+      // Charger les données Quiz (admin/user uniquement)
+      const role = (state.currentUser.role || '').toUpperCase();
+      if (role !== 'AGENT') {
+        await loadQuizData();
+        renderQuizImportSessionSelect();
+      }
     }
 
     function applyAccessRights() {
@@ -773,6 +1019,7 @@
 
       document.getElementById('tabUsers').style.display = isAdmin ? 'inline-flex' : 'none';
       document.getElementById('tabSettings').style.display = isAdmin ? 'inline-flex' : 'none';
+      document.getElementById('tabQuiz').style.display = isAgent ? 'none' : 'inline-flex';
       document.getElementById('tabGenerate').style.display = isAgent ? 'none' : 'inline-flex';
       document.getElementById('tabImport').style.display = isAgent ? 'none' : 'inline-flex';
       document.getElementById('tabDashboard').style.display = isAgent ? 'none' : 'inline-flex';
@@ -786,6 +1033,7 @@
         document.getElementById('generateSection').classList.add('hidden');
         document.getElementById('importSection').classList.add('hidden');
         document.getElementById('dashboardSection').classList.add('hidden');
+        document.getElementById('quizSection').classList.add('hidden');
         document.getElementById('usersSection').classList.add('hidden');
         document.getElementById('settingsSection').classList.add('hidden');
         document.getElementById('signatureMainTitle').textContent = 'Mes fiches à signer';
@@ -818,7 +1066,7 @@
     function switchTab(tabName) {
       const role = (state.currentUser && state.currentUser.role || '').toUpperCase();
       if (role === 'AGENT' && tabName !== 'signature') tabName = 'signature';
-      const tabs = ['generate', 'import', 'dashboard', 'signature', 'users', 'settings'];
+      const tabs = ['generate', 'import', 'dashboard', 'signature', 'quiz', 'users', 'settings'];
       tabs.forEach(name => {
         const section = document.getElementById(name + 'Section');
         const tab = document.getElementById('tab' + capitalize(name));
@@ -1502,6 +1750,577 @@
 
     function escapeAttr(str) { return escapeHtml(str).replace(/\n/g, '&#10;'); }
     function escapeJs(str) { return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Participant flow (hors connexion)
+    // ══════════════════════════════════════════════
+
+    function showQuizAccess() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('quizParticipantView').classList.remove('hidden');
+      document.getElementById('quizStep1').classList.remove('hidden');
+      document.getElementById('quizStep2').classList.add('hidden');
+      document.getElementById('quizStep3').classList.add('hidden');
+      document.getElementById('quizStep4').classList.add('hidden');
+      document.getElementById('quizAccessError').textContent = '';
+      document.getElementById('quizTokenInput').value = '';
+      document.getElementById('quizMatriculeInput').value = '';
+    }
+
+    function hideQuizAccess() {
+      document.getElementById('quizParticipantView').classList.add('hidden');
+      document.getElementById('loginView').classList.remove('hidden');
+      state.quizParticipant = null;
+      state.quizQuestions = [];
+    }
+
+    async function quizAccessStep1() {
+      const token = document.getElementById('quizTokenInput').value.trim();
+      const matricule = document.getElementById('quizMatriculeInput').value.trim();
+      const errEl = document.getElementById('quizAccessError');
+      errEl.textContent = '';
+      if (!token || !matricule) { errEl.textContent = 'Token et matricule requis.'; return; }
+      try {
+        const data = await rpc('quizAccessByToken', token, matricule);
+        state.quizParticipant = data;
+        state.quizParticipant.matricule = matricule;
+        document.getElementById('quizStep1').classList.add('hidden');
+        document.getElementById('quizStep2').classList.remove('hidden');
+        if (data.agent) {
+          document.getElementById('quizStep2AgentInfo').innerHTML =
+            `<strong>${escapeHtml(data.agent.fullName)}</strong> — Matricule ${escapeHtml(data.agent.matricule)}` +
+            (data.agent.sousEquipe ? ` — ${escapeHtml(data.agent.sousEquipe)}` : '');
+          document.getElementById('quizStep2AgentInfo').classList.remove('hidden');
+          document.getElementById('quizStep2ExterneForm').classList.add('hidden');
+        } else {
+          document.getElementById('quizStep2AgentInfo').classList.add('hidden');
+          document.getElementById('quizStep2ExterneForm').classList.remove('hidden');
+        }
+      } catch (err) {
+        errEl.textContent = err.message;
+      }
+    }
+
+    function quizBackToStep1() {
+      document.getElementById('quizStep2').classList.add('hidden');
+      document.getElementById('quizStep1').classList.remove('hidden');
+    }
+
+    function quizAccessStep2() {
+      const p = state.quizParticipant;
+      if (p.isExterne) {
+        p.nom = document.getElementById('quizExterneNom').value.trim();
+        p.prenom = document.getElementById('quizExternePrenom').value.trim();
+        p.groupe = document.getElementById('quizExterneGroupe').value.trim();
+        if (!p.nom) { showToast('Le nom est requis.', 'error'); return; }
+      } else {
+        const parts = (p.agent.fullName || '').split(' ');
+        p.nom = parts.slice(1).join(' ') || p.agent.fullName;
+        p.prenom = parts[0] || '';
+        p.groupe = p.agent.sousEquipe || '';
+      }
+      document.getElementById('quizStep2').classList.add('hidden');
+      document.getElementById('quizStep3').classList.remove('hidden');
+      document.getElementById('quizTitre').textContent = p.titre || 'Quiz';
+      document.getElementById('quizDescription').textContent = p.description || '';
+      renderQuizQuestions(p.questions);
+      document.getElementById('quizProgress').textContent = p.questions.length + ' question(s)';
+    }
+
+    function renderQuizQuestions(questions) {
+      const container = document.getElementById('quizQuestionsContainer');
+      container.innerHTML = questions.map((q, i) => {
+        let inputHtml = '';
+        if (q.type === 'qcm') {
+          inputHtml = (q.options || []).map((opt, oi) =>
+            `<label style="display:block;margin:4px 0;cursor:pointer;">
+              <input type="radio" name="quizAnswer_${q.id}" value="${escapeAttr(opt)}" /> ${escapeHtml(opt)}
+            </label>`
+          ).join('');
+        } else if (q.type === 'vrai_faux') {
+          inputHtml = ['Vrai', 'Faux'].map(v =>
+            `<label style="display:inline-block;margin-right:18px;cursor:pointer;">
+              <input type="radio" name="quizAnswer_${q.id}" value="${v}" /> ${v}
+            </label>`
+          ).join('');
+        } else if (q.type === 'reponse_courte') {
+          inputHtml = `<input type="text" data-quiz-id="${q.id}" placeholder="Ta réponse" style="width:100%;" />`;
+        } else {
+          inputHtml = `<textarea data-quiz-id="${q.id}" rows="3" placeholder="Ta réponse" style="width:100%;"></textarea>`;
+        }
+        return `<div class="card glass-card" style="margin-bottom:10px;padding:14px;">
+          <p style="margin:0 0 8px 0;"><strong>Q${i + 1}.</strong> ${escapeHtml(q.question)} <span class="pill pill-muted">${q.points || 1} pt(s)</span></p>
+          ${inputHtml}
+        </div>`;
+      }).join('');
+    }
+
+    async function quizSubmit() {
+      const p = state.quizParticipant;
+      const answers = {};
+      p.questions.forEach(q => {
+        if (q.type === 'qcm' || q.type === 'vrai_faux') {
+          const checked = document.querySelector(`input[name="quizAnswer_${q.id}"]:checked`);
+          answers[q.id] = checked ? checked.value : '';
+        } else {
+          const el = document.querySelector(`[data-quiz-id="${q.id}"]`);
+          answers[q.id] = el ? el.value.trim() : '';
+        }
+      });
+      const btn = document.querySelector('#quizStep3 .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('quizSubmitAnswers', {
+            sessionId: p.sessionId,
+            matricule: p.matricule,
+            nom: p.nom,
+            prenom: p.prenom,
+            groupe: p.groupe,
+            isExterne: p.isExterne,
+            answers: answers
+          });
+          document.getElementById('quizStep3').classList.add('hidden');
+          document.getElementById('quizStep4').classList.remove('hidden');
+          document.getElementById('quizResultText').textContent = res.message || 'Réponses enregistrées.';
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Admin : chargement des données
+    // ══════════════════════════════════════════════
+
+    async function loadQuizData() {
+      try {
+        const data = await rpc('getQuizBootstrapData', state.token);
+        state.quizModeles = data.modeles || [];
+        state.quizSessions = data.sessions || [];
+        state.quizReponses = data.reponses || [];
+        renderQuizModeles();
+        renderQuizSessions();
+        renderQuizResults();
+        renderQuizSessionModeleSelect();
+        renderQuizResultsSessionFilter();
+      } catch (err) {
+        console.warn('Quiz data load skipped:', err.message);
+      }
+    }
+
+    function renderQuizSessionModeleSelect() {
+      const sel = document.getElementById('quizSessionModele');
+      sel.innerHTML = '<option value="">-- Choisir un modèle --</option>' +
+        state.quizModeles.filter(m => m.actif !== 'NON').map(m =>
+          `<option value="${escapeAttr(m.modeleId)}">${escapeHtml(m.titre)}</option>`
+        ).join('');
+    }
+
+    function renderQuizResultsSessionFilter() {
+      const sel = document.getElementById('quizResultsSessionFilter');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">-- Toutes --</option>' +
+        state.quizSessions.map(s =>
+          `<option value="${escapeAttr(s.sessionId)}">${escapeHtml(s.titre || s.sessionId)}</option>`
+        ).join('');
+      sel.value = current;
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Admin : modèles CRUD
+    // ══════════════════════════════════════════════
+
+    function resetQuizModeleForm() {
+      document.getElementById('quizModeleEditId').value = '';
+      document.getElementById('quizModeleTitre').value = '';
+      document.getElementById('quizModeleDescription').value = '';
+      state.quizQuestions = [];
+      renderQuizQuestionsEditor();
+    }
+
+    function renderQuizQuestionsEditor() {
+      const container = document.getElementById('quizQuestionsEditor');
+      container.innerHTML = state.quizQuestions.map((q, i) => {
+        let typeOptions = ['qcm', 'vrai_faux', 'reponse_courte', 'texte_libre'].map(t =>
+          `<option value="${t}" ${q.type === t ? 'selected' : ''}>${t.replace('_', '/')}</option>`
+        ).join('');
+        let optionsHtml = '';
+        if (q.type === 'qcm') {
+          optionsHtml = `<div style="margin-top:6px;">
+            <label class="mini">Options (une par ligne)</label>
+            <textarea rows="3" onchange="state.quizQuestions[${i}].options = this.value.split('\\n').filter(x=>x.trim())">${(q.options || []).join('\n')}</textarea>
+            <label class="mini" style="margin-top:4px;">Bonne réponse</label>
+            <input type="text" value="${escapeAttr(q.correctAnswer || '')}" onchange="state.quizQuestions[${i}].correctAnswer = this.value" />
+          </div>`;
+        } else if (q.type === 'vrai_faux') {
+          optionsHtml = `<div style="margin-top:6px;">
+            <label class="mini">Bonne réponse</label>
+            <select onchange="state.quizQuestions[${i}].correctAnswer = this.value">
+              <option value="Vrai" ${q.correctAnswer === 'Vrai' ? 'selected' : ''}>Vrai</option>
+              <option value="Faux" ${q.correctAnswer === 'Faux' ? 'selected' : ''}>Faux</option>
+            </select>
+          </div>`;
+        }
+        return `<div class="card" style="padding:10px;margin-bottom:8px;border:1px solid rgba(255,255,255,.1);border-radius:8px;">
+          <div class="grid grid-3" style="gap:8px;align-items:end;">
+            <div>
+              <label class="mini">Question ${i + 1}</label>
+              <input type="text" value="${escapeAttr(q.question || '')}" onchange="state.quizQuestions[${i}].question = this.value" />
+            </div>
+            <div>
+              <label class="mini">Type</label>
+              <select onchange="state.quizQuestions[${i}].type = this.value; renderQuizQuestionsEditor();">${typeOptions}</select>
+            </div>
+            <div style="display:flex;gap:6px;align-items:end;">
+              <div style="flex:1;">
+                <label class="mini">Points</label>
+                <input type="number" min="1" value="${q.points || 1}" onchange="state.quizQuestions[${i}].points = +this.value" />
+              </div>
+              <button class="btn-secondary" style="padding:6px 10px;" onclick="removeQuizQuestion(${i})">X</button>
+            </div>
+          </div>
+          ${optionsHtml}
+        </div>`;
+      }).join('');
+    }
+
+    function addQuizQuestion() {
+      state.quizQuestions.push({
+        id: 'q' + Date.now(),
+        type: 'qcm',
+        question: '',
+        options: [],
+        correctAnswer: '',
+        points: 1
+      });
+      renderQuizQuestionsEditor();
+    }
+
+    function removeQuizQuestion(index) {
+      state.quizQuestions.splice(index, 1);
+      renderQuizQuestionsEditor();
+    }
+
+    async function saveQuizModele() {
+      const titre = document.getElementById('quizModeleTitre').value.trim();
+      if (!titre) return showToast('Titre du modèle requis.', 'error');
+      if (state.quizQuestions.length === 0) return showToast('Ajoutez au moins une question.', 'error');
+      const payload = {
+        modeleId: document.getElementById('quizModeleEditId').value || '',
+        titre: titre,
+        description: document.getElementById('quizModeleDescription').value.trim(),
+        questions: state.quizQuestions
+      };
+      const btn = document.querySelector('#quizSection .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          await rpc('saveQuizModele', state.token, payload);
+          showToast('Modèle enregistré.', 'success');
+          resetQuizModeleForm();
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    function editQuizModele(modeleId) {
+      const m = state.quizModeles.find(x => x.modeleId === modeleId);
+      if (!m) return;
+      document.getElementById('quizModeleEditId').value = m.modeleId;
+      document.getElementById('quizModeleTitre').value = m.titre || '';
+      document.getElementById('quizModeleDescription').value = m.description || '';
+      try { state.quizQuestions = JSON.parse(m.questionsJson || '[]'); } catch (e) { state.quizQuestions = []; }
+      renderQuizQuestionsEditor();
+      switchTab('quiz');
+    }
+
+    async function deleteQuizModele(modeleId) {
+      if (!confirm('Supprimer ce modèle de quiz ?')) return;
+      try {
+        await rpc('deleteQuizModele', state.token, modeleId);
+        showToast('Modèle supprimé.', 'success');
+        await loadQuizData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function renderQuizModeles() {
+      const el = document.getElementById('quizModelesList');
+      if (!state.quizModeles.length) { el.innerHTML = '<p class="mini">Aucun modèle.</p>'; return; }
+      el.innerHTML = state.quizModeles.map(m => {
+        let qCount = 0;
+        try { qCount = JSON.parse(m.questionsJson || '[]').length; } catch (e) {}
+        return `<div class="user-card">
+          <div>
+            <strong>${escapeHtml(m.titre)}</strong>
+            <span class="mini"> — ${qCount} question(s)</span>
+            ${m.description ? `<br><span class="mini muted">${escapeHtml(m.description)}</span>` : ''}
+          </div>
+          <div class="toolbar" style="gap:6px;">
+            <button class="btn-secondary" onclick="editQuizModele('${escapeJs(m.modeleId)}')">Modifier</button>
+            <button class="btn-secondary" onclick="deleteQuizModele('${escapeJs(m.modeleId)}')">Supprimer</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Admin : sessions CRUD
+    // ══════════════════════════════════════════════
+
+    function resetQuizSessionForm() {
+      document.getElementById('quizSessionEditId').value = '';
+      document.getElementById('quizSessionModele').value = '';
+      document.getElementById('quizSessionTitre').value = '';
+      document.getElementById('quizSessionDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('quizSessionLieu').value = '';
+      document.getElementById('quizSessionDuree').value = '';
+    }
+
+    async function saveQuizSession() {
+      const modeleId = document.getElementById('quizSessionModele').value;
+      const titre = document.getElementById('quizSessionTitre').value.trim();
+      if (!modeleId) return showToast('Sélectionnez un modèle.', 'error');
+      if (!titre) return showToast('Titre de session requis.', 'error');
+      const payload = {
+        sessionId: document.getElementById('quizSessionEditId').value || '',
+        modeleId: modeleId,
+        titre: titre,
+        dateSession: document.getElementById('quizSessionDate').value,
+        lieu: document.getElementById('quizSessionLieu').value.trim(),
+        duree: document.getElementById('quizSessionDuree').value.trim()
+      };
+      const btn = document.querySelector('#quizSection div:nth-child(1) > div:nth-child(2) .btn-primary') ||
+                  document.querySelectorAll('#quizSection .btn-primary')[1];
+      await withButtonLock(btn, async () => {
+        try {
+          await rpc('saveQuizSession', state.token, payload);
+          showToast('Session enregistrée.', 'success');
+          resetQuizSessionForm();
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    async function toggleQuizSession(sessionId, actif) {
+      try {
+        await rpc('toggleQuizSession', state.token, sessionId, actif);
+        showToast(actif ? 'Session activée.' : 'Session désactivée.', 'success');
+        await loadQuizData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function renderQuizSessions() {
+      const el = document.getElementById('quizSessionsList');
+      if (!state.quizSessions.length) { el.innerHTML = '<p class="mini">Aucune session.</p>'; return; }
+      el.innerHTML = state.quizSessions.map(s => {
+        const modeleName = (state.quizModeles.find(m => m.modeleId === s.modeleId) || {}).titre || '?';
+        const isActive = s.actif !== 'NON';
+        const reponseCount = state.quizReponses.filter(r => r.sessionId === s.sessionId).length;
+        return `<div class="user-card">
+          <div>
+            <strong>${escapeHtml(s.titre)}</strong>
+            <span class="pill ${isActive ? 'pill-success' : 'pill-muted'}">${isActive ? 'Active' : 'Fermée'}</span>
+            <br><span class="mini muted">Modèle : ${escapeHtml(modeleName)} · Token : <code>${escapeHtml(s.token)}</code> · ${reponseCount} réponse(s)</span>
+            ${s.dateSession ? `<br><span class="mini muted">Date : ${escapeHtml(s.dateSession)} · ${escapeHtml(s.lieu || '')}</span>` : ''}
+          </div>
+          <div class="toolbar" style="gap:6px;">
+            <button class="btn-secondary" onclick="toggleQuizSession('${escapeJs(s.sessionId)}', ${!isActive})">${isActive ? 'Fermer' : 'Activer'}</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Admin : résultats et correction
+    // ══════════════════════════════════════════════
+
+    function renderQuizResults() {
+      const filterSession = document.getElementById('quizResultsSessionFilter').value;
+      let rows = state.quizReponses;
+      if (filterSession) rows = rows.filter(r => r.sessionId === filterSession);
+      const tbody = document.getElementById('quizResultsBody');
+      if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="mini">Aucun résultat.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(r => {
+        const name = (r.prenom ? r.prenom + ' ' + r.nom : r.nom) || r.matricule;
+        const isGraded = !!r.corrigePar;
+        const hasPdf = !!r.pdfUrl;
+        const isLinked = !!r.trackingRowNumber;
+        let statusPill = '';
+        if (hasPdf) statusPill = '<span class="pill pill-success">PDF</span>';
+        else if (isGraded) statusPill = '<span class="pill pill-success">Corrigé</span>';
+        else statusPill = '<span class="pill pill-muted">Soumis</span>';
+        return `<tr>
+          <td>${escapeHtml(name)}${r.isExterne === 'OUI' ? ' <span class="pill pill-muted">Externe</span>' : ''}</td>
+          <td>${escapeHtml(r.matricule)}</td>
+          <td>${escapeHtml(r.groupe || '-')}</td>
+          <td><strong>${r.score ?? '-'}</strong> / ${r.noteMax ?? '-'}</td>
+          <td>${statusPill}</td>
+          <td>${escapeHtml(r.soumisLe || '-')}</td>
+          <td>
+            <div class="toolbar" style="gap:4px;">
+              <button class="btn-secondary" style="padding:4px 8px;" onclick="openQuizGradeModal('${escapeJs(r.reponseId)}')">Corriger</button>
+              ${!hasPdf ? `<button class="btn-secondary" style="padding:4px 8px;" onclick="adminGenerateQuizPdf('${escapeJs(r.reponseId)}')">PDF</button>` : `<a href="${escapeAttr(r.pdfUrl)}" target="_blank" class="btn-secondary" style="padding:4px 8px;text-decoration:none;">Voir PDF</a>`}
+              ${hasPdf && !isLinked ? `<button class="btn-secondary" style="padding:4px 8px;" onclick="adminLinkQuizToTracking('${escapeJs(r.reponseId)}')">Lier émargement</button>` : ''}
+              ${isLinked ? '<span class="pill pill-success">Lié</span>' : ''}
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function openQuizGradeModal(reponseId) {
+      const r = state.quizReponses.find(x => x.reponseId === reponseId);
+      if (!r) return;
+      let answers = [];
+      try { answers = JSON.parse(r.reponsesJson || '[]'); } catch (e) {}
+      document.getElementById('quizGradeTitle').textContent = 'Correction — ' + (r.prenom ? r.prenom + ' ' + r.nom : r.nom || r.matricule);
+      const content = document.getElementById('quizGradeContent');
+      content.innerHTML = answers.map((a, i) => {
+        const isAuto = a.type === 'qcm' || a.type === 'vrai_faux';
+        const correctClass = a.correct === true ? 'color:#4ade80;' : a.correct === false ? 'color:#d96a63;' : '';
+        return `<div style="margin-bottom:14px;padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:8px;">
+          <p style="margin:0 0 6px;"><strong>Q${i + 1}.</strong> ${escapeHtml(a.question)} <span class="pill pill-muted">${a.points} pt(s)</span></p>
+          <p style="margin:2px 0;${correctClass}">Réponse : <strong>${escapeHtml(String(a.userAnswer || '-'))}</strong></p>
+          ${a.correctAnswer ? `<p class="mini muted" style="margin:2px 0;">Bonne réponse attendue : ${escapeHtml(String(a.correctAnswer))}</p>` : ''}
+          ${!isAuto ? `<div style="margin-top:6px;">
+            <label class="mini">Note attribuée (0 à ${a.points})</label>
+            <input type="number" min="0" max="${a.points}" value="${a.correct === true ? a.points : 0}" data-grade-id="${a.id}" style="width:80px;" />
+          </div>` : ''}
+        </div>`;
+      }).join('');
+      content.dataset.reponseId = reponseId;
+      document.getElementById('quizGradeModal').classList.remove('hidden');
+    }
+
+    function closeQuizGradeModal() {
+      document.getElementById('quizGradeModal').classList.add('hidden');
+    }
+
+    async function submitQuizGrade() {
+      const content = document.getElementById('quizGradeContent');
+      const reponseId = content.dataset.reponseId;
+      const grades = {};
+      content.querySelectorAll('[data-grade-id]').forEach(el => {
+        grades[el.dataset.gradeId] = Number(el.value) || 0;
+      });
+      const btn = document.querySelector('#quizGradeModal .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('gradeQuizReponse', state.token, { reponseId, grades });
+          showToast(`Note enregistrée : ${res.score}/${res.noteMax}`, 'success');
+          closeQuizGradeModal();
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    async function adminGenerateQuizPdf(reponseId) {
+      const btn = event && event.target;
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('generateQuizPdf', state.token, reponseId);
+          showToast('PDF généré avec succès.', 'success');
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    async function adminLinkQuizToTracking(reponseId) {
+      const btn = event && event.target;
+      await withButtonLock(btn, async () => {
+        try {
+          await rpc('linkQuizToTracking', state.token, reponseId);
+          showToast('Quiz lié à l\'émargement.', 'success');
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  QUIZ — Import réponses Google Forms
+    // ══════════════════════════════════════════════
+
+    async function importQuizFromSheet() {
+      const sessionId = document.getElementById('quizImportSessionSelect').value;
+      const sheetUrl = document.getElementById('quizImportSheetUrl').value.trim();
+      const colMatricule = document.getElementById('quizImportColMatricule').value.trim();
+      const colNom = document.getElementById('quizImportColNom').value.trim();
+      const colPrenom = document.getElementById('quizImportColPrenom').value.trim();
+      const colGroupe = document.getElementById('quizImportColGroupe').value.trim();
+
+      if (!sessionId) return showToast('Sélectionnez une session de quiz.', 'error');
+      if (!sheetUrl) return showToast('URL du Google Sheet requis.', 'error');
+
+      // Collecter le mapping des questions
+      const mappings = [];
+      document.querySelectorAll('[data-quiz-import-qid]').forEach(el => {
+        const qId = el.dataset.quizImportQid;
+        const colLetter = el.value.trim();
+        if (colLetter) mappings.push({ questionId: qId, column: colLetter });
+      });
+
+      const payload = {
+        sessionId,
+        sheetUrl,
+        colMatricule: colMatricule || 'B',
+        colNom: colNom || 'C',
+        colPrenom: colPrenom || 'D',
+        colGroupe: colGroupe || 'E',
+        questionMappings: mappings,
+        startRow: parseInt(document.getElementById('quizImportStartRow').value) || 2
+      };
+
+      const btn = document.querySelector('#quizImportCard .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('importQuizResponsesFromSheet', state.token, payload);
+          showToast(`Import terminé : ${res.imported} réponse(s) importée(s), ${res.skipped} doublon(s) ignoré(s).`, 'success');
+          await loadQuizData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    function onQuizImportSessionChange() {
+      const sessionId = document.getElementById('quizImportSessionSelect').value;
+      const mappingContainer = document.getElementById('quizImportMappings');
+      if (!sessionId) { mappingContainer.innerHTML = ''; return; }
+      const session = state.quizSessions.find(s => s.sessionId === sessionId);
+      if (!session) return;
+      const modele = state.quizModeles.find(m => m.modeleId === session.modeleId);
+      if (!modele) return;
+      let questions = [];
+      try { questions = JSON.parse(modele.questionsJson || '[]'); } catch (e) {}
+      mappingContainer.innerHTML = questions.map((q, i) =>
+        `<div class="grid grid-2" style="gap:8px;margin-bottom:6px;">
+          <span class="mini">Q${i + 1}: ${escapeHtml(q.question).substring(0, 60)}</span>
+          <input type="text" data-quiz-import-qid="${escapeAttr(q.id)}" placeholder="Colonne (ex: F)" style="width:80px;" />
+        </div>`
+      ).join('');
+    }
+
+    function renderQuizImportSessionSelect() {
+      const sel = document.getElementById('quizImportSessionSelect');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- Choisir une session --</option>' +
+        state.quizSessions.map(s =>
+          `<option value="${escapeAttr(s.sessionId)}">${escapeHtml(s.titre || s.sessionId)}</option>`
+        ).join('');
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       applyTheme();
