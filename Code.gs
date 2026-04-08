@@ -2199,9 +2199,6 @@ function generateQuizPdf(token, reponseId) {
     replaceTextSafely_(body, '{{QUIZ_QUESTIONS}}', questionsContent);
     replaceTextSafely_(body, '{{DATE_GENERATION}}', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
 
-    // Préparer les ancres de signature si présentes dans le template
-    prepareAgentSignatureAnchor_(doc);
-
   } else {
     // ── Mode sans template : génération programmatique ──
     doc = DocumentApp.create(docTitle);
@@ -2241,26 +2238,31 @@ function generateQuizPdf(token, reponseId) {
     scorePara.setSpacingAfter(10);
 
     answers.forEach(function(a, idx) {
-      var qTitle = body.appendParagraph('Question ' + (idx + 1) + ' (' + (a.points || 1) + ' pt' + ((a.points || 1) > 1 ? 's' : '') + ') — ' + (a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre'));
-      qTitle.editAsText().setBold(true).setFontSize(10).setForegroundColor('#1a1a2e');
-      qTitle.setSpacingBefore(10).setSpacingAfter(3);
+      // Titre question : gras + italique
+      var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
+      var qTitle = body.appendParagraph('Question ' + (idx + 1) + ' (' + (a.points || 1) + ' pt' + ((a.points || 1) > 1 ? 's' : '') + ') — ' + typeLabel);
+      qTitle.editAsText().setBold(true).setItalic(true).setFontSize(10).setForegroundColor('#1a1a2e');
+      qTitle.setSpacingBefore(10).setSpacingAfter(2);
 
+      // Énoncé : gras + italique
       var qText = body.appendParagraph(String(a.question || ''));
-      qText.editAsText().setFontSize(10);
-      qText.setSpacingAfter(4);
+      qText.editAsText().setBold(true).setItalic(true).setFontSize(10);
+      qText.setSpacingAfter(6);
 
+      // Réponse : normal
       var aPara = body.appendParagraph('Réponse : ' + String(a.userAnswer || '(aucune)'));
-      aPara.editAsText().setFontSize(10);
+      aPara.editAsText().setFontSize(10).setBold(false).setItalic(false);
 
+      // Correction pour QCM/V-F : normal
       if (a.type === 'qcm' || a.type === 'vrai_faux') {
         body.appendParagraph('Bonne réponse : ' + String(a.correctAnswer || '-'))
-          .editAsText().setFontSize(9).setForegroundColor('#555555');
+          .editAsText().setFontSize(9).setForegroundColor('#555555').setBold(false).setItalic(false);
         body.appendParagraph(a.correct ? '✓ Correct' : '✗ Incorrect')
-          .editAsText().setBold(true).setFontSize(10)
+          .editAsText().setBold(true).setItalic(false).setFontSize(10)
           .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
       } else if (a.correct !== null && a.correct !== undefined) {
         body.appendParagraph(a.correct ? '✓ Validé' : '✗ Non validé')
-          .editAsText().setBold(true).setFontSize(10)
+          .editAsText().setBold(true).setItalic(false).setFontSize(10)
           .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
       }
 
@@ -2269,6 +2271,20 @@ function generateQuizPdf(token, reponseId) {
           .editAsText().setFontSize(6).setForegroundColor('#cccccc');
       }
     });
+
+    // ── Bloc signature ──
+    body.appendParagraph('').setSpacingAfter(20);
+    var sigTable = body.appendTable([
+      ['Intervenant / Formateur', 'Participant / Évalué'],
+      ['{{INTERVENANT}}', '{{SIGNATURE}}']
+    ]);
+    sigTable.setBorderWidth(1).setBorderColor('#cccccc');
+    for (var sc = 0; sc < 2; sc++) {
+      sigTable.getRow(0).getCell(sc).editAsText().setBold(true).setFontSize(9);
+      sigTable.getRow(0).getCell(sc).setBackgroundColor('#f0f0f8');
+      sigTable.getRow(1).getCell(sc).editAsText().setFontSize(8).setForegroundColor('#999999');
+      sigTable.getRow(1).setMinimumHeight(60);
+    }
 
     body.appendParagraph('').setSpacingAfter(12);
     body.appendParagraph('Document généré le ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
@@ -2279,6 +2295,10 @@ function generateQuizPdf(token, reponseId) {
     quizFolder.addFile(tmpFile);
     DriveApp.getRootFolder().removeFile(tmpFile);
   }
+
+  // Préparer les ancres de signature (commun aux deux modes)
+  prepareIntervenantLayout_(doc, session.userId);
+  prepareAgentSignatureAnchor_(doc);
 
   doc.saveAndClose();
 
@@ -2301,16 +2321,18 @@ function buildQuizQuestionsContent_(answers) {
   return answers.map(function(a, idx) {
     var parts = [];
     var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
-    parts.push('Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) - ' + typeLabel + ' : ' + String(a.question || ''));
-    parts.push('  Réponse : ' + String(a.userAnswer || '(aucune)'));
+    parts.push('Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) — ' + typeLabel);
+    parts.push(String(a.question || ''));
+    parts.push('');
+    parts.push('Réponse : ' + String(a.userAnswer || '(aucune)'));
     if (a.type === 'qcm' || a.type === 'vrai_faux') {
-      parts.push('  Bonne réponse : ' + String(a.correctAnswer || '-'));
-      parts.push('  ' + (a.correct ? '✓ Correct' : '✗ Incorrect'));
+      parts.push('Bonne réponse : ' + String(a.correctAnswer || '-'));
+      parts.push(a.correct ? '✓ Correct' : '✗ Incorrect');
     } else if (a.correct !== null && a.correct !== undefined) {
-      parts.push('  ' + (a.correct ? '✓ Validé' : '✗ Non validé'));
+      parts.push(a.correct ? '✓ Validé' : '✗ Non validé');
     }
     return parts.join('\n');
-  }).join('\n\n');
+  }).join('\n\n─────────────────────────────\n\n');
 }
 
 // ── Rattachement quiz au module émargement/tracking ──
