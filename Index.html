@@ -527,6 +527,15 @@
                 <label>Mois / année</label>
                 <input id="signatureMonth" type="month" onchange="loadSignatureQueue()" />
               </div>
+              <div>
+                <label>Filtre</label>
+                <select id="signatureFilter" onchange="renderSignatureCards()">
+                  <option value="">Tous</option>
+                  <option value="unsigned">Non signés</option>
+                  <option value="partial">Partiellement signés</option>
+                  <option value="signed">Entièrement signés</option>
+                </select>
+              </div>
               <button class="btn-secondary" onclick="loadSignatureQueue()">Actualiser</button>
             </div>
           </div>
@@ -1393,7 +1402,17 @@
     function renderSignatureCards() {
       const box = document.getElementById('signatureCards');
       const isAdminRole = ((state.currentUser && state.currentUser.role) || '').toUpperCase() === 'ADMIN';
-      box.innerHTML = state.signatureRows.map(row => `
+      const filter = document.getElementById('signatureFilter').value;
+      const filtered = state.signatureRows.filter(row => {
+        if (!filter) return true;
+        const intSigned = row.statutSignatureIntervenant === 'Signé';
+        const agSigned = row.statutSignatureAgent === 'Signé';
+        if (filter === 'signed') return intSigned && agSigned;
+        if (filter === 'unsigned') return !intSigned && !agSigned;
+        if (filter === 'partial') return (intSigned || agSigned) && !(intSigned && agSigned);
+        return true;
+      });
+      box.innerHTML = filtered.map(row => `
         <div class="signature-card">
           <div class="section-title">
             <div>
