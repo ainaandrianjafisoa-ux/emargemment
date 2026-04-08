@@ -1294,7 +1294,7 @@ function initializeWorkbook_() {
   ensureSheet_(ss, APP.SHEETS.QUIZ_REPONSES, [
     'ReponseId', 'SessionId', 'Matricule', 'Nom', 'Prenom', 'Groupe',
     'IsExterne', 'ReponsesJson', 'Score', 'NoteMax', 'CorrigePar', 'CorrigeLe',
-    'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe'
+    'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe', 'SourceDocFileId'
   ]);
 
   seedDefaultParams_();
@@ -1371,7 +1371,7 @@ function ensureQuizSheets_() {
     ensureSheet_(ss, APP.SHEETS.QUIZ_REPONSES, [
       'ReponseId', 'SessionId', 'Matricule', 'Nom', 'Prenom', 'Groupe',
       'IsExterne', 'ReponsesJson', 'Score', 'NoteMax', 'CorrigePar', 'CorrigeLe',
-      'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe'
+      'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe', 'SourceDocFileId'
     ]);
   }
 }
@@ -1829,7 +1829,8 @@ function getQuizReponses_() {
       pdfFileId: String(row[12] || '').trim(),
       pdfUrl: String(row[13] || '').trim(),
       trackingRowNumber: row[14] ? Number(row[14]) : null,
-      soumisLe: row[15] ? formatDateTimeFr_(row[15]) : ''
+      soumisLe: row[15] ? formatDateTimeFr_(row[15]) : '',
+      sourceDocFileId: String(row[16] || '').trim()
     };
   }).filter(function(r) { return r.reponseId; });
 }
@@ -2289,8 +2290,9 @@ function generateQuizPdf(token, reponseId) {
 
   // Mettre à jour la réponse avec le PDF + sourceDocId
   var repSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
-  repSheet.getRange(reponse.rowNumber, 13).setValue(pdfFile.getId());
-  repSheet.getRange(reponse.rowNumber, 14).setValue(pdfFile.getUrl());
+  repSheet.getRange(reponse.rowNumber, 13).setValue(pdfFile.getId());    // PdfFileId
+  repSheet.getRange(reponse.rowNumber, 14).setValue(pdfFile.getUrl());   // PdfUrl
+  repSheet.getRange(reponse.rowNumber, 17).setValue(docFileId);          // SourceDocFileId
 
   return { success: true, pdfUrl: pdfFile.getUrl(), pdfFileId: pdfFile.getId(), sourceDocFileId: docFileId };
 }
@@ -2361,8 +2363,8 @@ function linkQuizToTracking(token, reponseId) {
     themeModel: '',
     themesText: 'Score : ' + (reponse.score !== null ? reponse.score : '?') + '/' + (reponse.noteMax || '?'),
     remarques: 'Quiz rattaché automatiquement',
-    sourceDocFileId: '',
-    sourceDocUrl: '',
+    sourceDocFileId: reponse.sourceDocFileId || '',
+    sourceDocUrl: reponse.sourceDocFileId ? ('https://docs.google.com/document/d/' + reponse.sourceDocFileId + '/edit') : '',
     pdfFileId: reponse.pdfFileId,
     pdfUrl: reponse.pdfUrl,
     statutPdf: APP.STATUS.PDF_GENERATED,
