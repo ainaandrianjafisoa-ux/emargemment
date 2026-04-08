@@ -1786,6 +1786,14 @@
     function escapeAttr(str) { return escapeHtml(str).replace(/\n/g, '&#10;'); }
     function escapeJs(str) { return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
+    function formatDateDisplay(val) {
+      if (!val) return '';
+      const s = String(val).trim();
+      const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
+      return s;
+    }
+
     // ══════════════════════════════════════════════
     // ██  QUIZ — Participant flow (hors connexion)
     // ══════════════════════════════════════════════
@@ -2168,7 +2176,7 @@
             <strong>${escapeHtml(s.titre)}</strong>
             <span class="pill ${isActive ? 'pill-success' : 'pill-muted'}">${isActive ? 'Active' : 'Fermée'}</span>
             <br><span class="mini muted">Modèle : ${escapeHtml(modeleName)} · Token : <code>${escapeHtml(s.token)}</code> · ${reponseCount} réponse(s)</span>
-            ${s.dateSession ? `<br><span class="mini muted">Date : ${escapeHtml(s.dateSession)} · ${escapeHtml(s.lieu || '')}</span>` : ''}
+            ${s.dateSession ? `<br><span class="mini muted">Date : ${escapeHtml(formatDateDisplay(s.dateSession))} · ${escapeHtml(s.lieu || '')}</span>` : ''}
           </div>
           <div class="toolbar" style="gap:6px;">
             <button class="btn-secondary" onclick="toggleQuizSession('${escapeJs(s.sessionId)}', ${!isActive})">${isActive ? 'Fermer' : 'Activer'}</button>

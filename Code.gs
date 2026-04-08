@@ -1418,7 +1418,7 @@ function mapTrackingRow_(row, rowNumber) {
     rowNumber: rowNumber,
     recordId: row[0],
     period: row[1],
-    dateSession: row[2],
+    dateSession: normalizeDate_(row[2]),
     monthLabel: row[3],
     agentMatricule: row[4],
     agentName: row[5],
@@ -1439,14 +1439,14 @@ function mapTrackingRow_(row, rowNumber) {
     pdfUrl: row[20],
     statutPdf: row[21],
     statutSignatureIntervenant: row[22],
-    dateSignatureIntervenant: row[23],
+    dateSignatureIntervenant: normalizeDate_(row[23]),
     signeIntervenantPar: row[24],
     statutSignatureAgent: row[25],
-    dateSignatureAgent: row[26],
+    dateSignatureAgent: normalizeDate_(row[26]),
     signeAgentPar: row[27],
-    dateGeneration: row[28],
+    dateGeneration: formatDateTimeFr_(row[28]),
     generePar: row[29],
-    majLe: row[30],
+    majLe: formatDateTimeFr_(row[30]),
     commentaireIntervenant: String(row[31] || ''),
     signTokenAgent: String(row[32] || '')
   };
@@ -1585,7 +1585,18 @@ function formatMaybeDateTimeFr_(value) {
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
   }
-  return String(value).trim();
+  var str = String(value).trim();
+  // ISO yyyy-MM-dd → dd/MM/yyyy
+  var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
+  // Déjà au format fr → retourner tel quel
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) return str;
+  // Tenter parse JS pour formats bruts restants
+  try {
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  } catch (e) {}
+  return str;
 }
 
 function replaceTextSafely_(body, placeholder, value) {
@@ -1620,11 +1631,36 @@ function parseLocalDate_(input) {
     return new Date(Number(frDateMatch[3]), Number(frDateMatch[2]) - 1, Number(frDateMatch[1]), 12, 0, 0);
   }
 
+  // Fallback : tenter un parse JS natif (ex: "Wed Jan 01 2025...")
+  try {
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+  } catch (e) {}
+
   throw new Error('Date de session invalide.');
 }
 
 function formatDateFr_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+}
+
+function normalizeDate_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var str = String(value).trim();
+  // Déjà au format ISO yyyy-MM-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Format fr dd/MM/yyyy → yyyy-MM-dd
+  var frMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (frMatch) return frMatch[3] + '-' + frMatch[2].padStart(2, '0') + '-' + frMatch[1].padStart(2, '0');
+  // Tenter un parse JavaScript (format brut type "Wed Jan 01 2025...")
+  try {
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  } catch (e) {}
+  return str;
 }
 
 function formatDateTimeFr_(value) {
@@ -1761,7 +1797,7 @@ function getQuizSessions_() {
       token: String(row[1] || '').trim(),
       modeleId: String(row[2] || '').trim(),
       titre: String(row[3] || '').trim(),
-      dateSession: String(row[4] || '').trim(),
+      dateSession: normalizeDate_(row[4]),
       lieu: String(row[5] || '').trim(),
       duree: String(row[6] || '').trim(),
       actif: !/^non|false|0$/i.test(String(row[7] || 'OUI').trim()),
