@@ -4,7 +4,10 @@ const APP = {
     USERS: 'USERS',
     PARAMS: 'PARAMETRES',
     THEME_MODELS: 'MODELES_THEMES',
-    TRACKING: 'SUIVI_EMARGEMENT'
+    TRACKING: 'SUIVI_EMARGEMENT',
+    QUIZ_MODELES: 'QUIZ_MODELES',
+    QUIZ_SESSIONS: 'QUIZ_SESSIONS',
+    QUIZ_REPONSES: 'QUIZ_REPONSES'
   },
   PARAM_KEYS: {
     TEMPLATE_ID: 'DOC_TEMPLATE_ID',
@@ -12,13 +15,24 @@ const APP = {
     DEFAULT_TITLE: 'DEFAULT_INTITULE_SESSION',
     DEFAULT_DURATION: 'DEFAULT_DUREE_SESSION',
     DEFAULT_LOCATION: 'DEFAULT_LIEU',
-    APP_NAME: 'APP_NAME'
+    APP_NAME: 'APP_NAME',
+    QUIZ_TEMPLATE_ID: 'QUIZ_TEMPLATE_ID'
   },
   STATUS: {
     PDF_GENERATED: 'Généré',
     PDF_NOT_GENERATED: 'Non généré',
     SIGNED: 'Signé',
     PENDING: 'À signer'
+  },
+  QUIZ_STATUS: {
+    DRAFT: 'Brouillon',
+    ACTIVE: 'Active',
+    CLOSED: 'Fermée'
+  },
+  QUIZ_REPONSE_STATUS: {
+    SUBMITTED: 'Soumis',
+    GRADED: 'Noté',
+    PDF_GENERATED: 'PDF généré'
   },
   MARKERS: {
     INTERVENANT: '[[INTERVENANT_SIGNATURE_BLOCK]]',
@@ -296,7 +310,8 @@ function getBootstrapData(token) {
       defaultTitle: params[APP.PARAM_KEYS.DEFAULT_TITLE] || '',
       defaultDuration: params[APP.PARAM_KEYS.DEFAULT_DURATION] || '',
       defaultLocation: params[APP.PARAM_KEYS.DEFAULT_LOCATION] || '',
-      appName: params[APP.PARAM_KEYS.APP_NAME] || 'Émargement mensuel'
+      appName: params[APP.PARAM_KEYS.APP_NAME] || 'Émargement mensuel',
+      quizTemplateId: params[APP.PARAM_KEYS.QUIZ_TEMPLATE_ID] || ''
     },
     agents: getAgents_(),
     users: isAdmin_(session) ? getUsers_() : [],
@@ -366,7 +381,8 @@ function getSignatureQueue(token, period) {
     canSignIntervenant: canSessionSignIntervenant_(session, rec),
     canSignAgent: canSessionSignAgent_(session, rec),
     signatureIntervenantAt: formatMaybeDateTimeFr_(rec.dateSignatureIntervenant),
-    signatureAgentAt: formatMaybeDateTimeFr_(rec.dateSignatureAgent)
+    signatureAgentAt: formatMaybeDateTimeFr_(rec.dateSignatureAgent),
+    signTokenAgent: isAdmin_(session) ? String(rec.signTokenAgent || '') : ''
   }));
 
   return { period: cleanPeriod, rows };
@@ -385,6 +401,7 @@ function saveSettings(token, payload) {
   upsertParam_(paramsSheet, APP.PARAM_KEYS.DEFAULT_DURATION, String(payload.defaultDuration || '').trim());
   upsertParam_(paramsSheet, APP.PARAM_KEYS.DEFAULT_LOCATION, String(payload.defaultLocation || '').trim());
   upsertParam_(paramsSheet, APP.PARAM_KEYS.APP_NAME, String(payload.appName || 'Émargement mensuel').trim());
+  upsertParam_(paramsSheet, APP.PARAM_KEYS.QUIZ_TEMPLATE_ID, String(payload.quizTemplateId || '').trim());
 
   if (Array.isArray(payload.themeModels)) {
     const sheet = ss.getSheetByName(APP.SHEETS.THEME_MODELS);
@@ -486,6 +503,7 @@ function generateAttendancePdfs(token, payload) {
     throw new Error("Le modèle doit être un Google Docs natif. Ouvre le .docx puis fais 'Fichier > Enregistrer comme Google Docs', puis renseigne le nouvel ID dans PARAMETRES > DOC_TEMPLATE_ID.");
   }
 
+  const agentThemesMap = (payload.agentThemesMap && typeof payload.agentThemesMap === 'object') ? payload.agentThemesMap : {};
   const results = [];
 
   selectedMatricules.forEach(matricule => {
@@ -496,7 +514,8 @@ function generateAttendancePdfs(token, payload) {
     }
 
     try {
-      const existing = trackingIndex[matricule] || null;
+      const sessionDateStr = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      const existing = trackingIndex[matricule + '|' + sessionDateStr] || null;
       const pdfName = buildPdfName_(agent.prenom || agent.fullName, sessionDate);
       const sourceDocName = buildSourceDocName_(agent.fullName, sessionDate);
 
@@ -508,11 +527,14 @@ function generateAttendancePdfs(token, payload) {
       const doc = openDocumentWithRetry_(docCopy.getId(), 5);
       const body = doc.getBody();
 
+      // Thèmes spécifiques par agent (import CSV) ou thèmes communs
+      const agentThemes = String(agentThemesMap[matricule] || payload.themesText || '');
+
       replaceTextSafely_(body, '{{INTITULE_SESSION}}', String(payload.intituleSession || ''));
       replaceTextSafely_(body, '{{DATE_SESSION}}', formatDateFr_(sessionDate));
       replaceTextSafely_(body, '{{DUREE_SESSION}}', String(payload.duree || ''));
       replaceTextSafely_(body, '{{LIEU}}', String(payload.lieu || ''));
-      replaceTextSafely_(body, '{{THEMES_ABORDES}}', String(payload.themesText || ''));
+      replaceTextSafely_(body, '{{THEMES_ABORDES}}', agentThemes);
       replaceTextSafely_(body, '{{AGENT_MATRICULE}}', agent.matricule);
       replaceTextSafely_(body, '{{AGENT_NOM_PRENOM}}', agent.fullName);
       replaceTextSafely_(body, '{{SOUS_EQUIPE}}', agent.sousEquipe);
@@ -537,7 +559,7 @@ function generateAttendancePdfs(token, payload) {
         intervenantNom: cleanIntervenantLabel_(session.name),
         intervenantTitle: session.title || APP.SIGNATURE_TITLE_DEFAULT,
         themeModel: String(payload.themeModelName || ''),
-        themesText: String(payload.themesText || ''),
+        themesText: agentThemes,
         remarques: String(payload.remarques || ''),
         sourceDocFileId: docCopy.getId(),
         sourceDocUrl: docCopy.getUrl(),
@@ -552,7 +574,9 @@ function generateAttendancePdfs(token, payload) {
         signeAgentPar: existing ? existing.signeAgentPar : '',
         dateGeneration: new Date(),
         generePar: session.name,
-        majLe: new Date()
+        majLe: new Date(),
+        commentaireIntervenant: existing ? (existing.commentaireIntervenant || '') : '',
+        signTokenAgent: existing ? (existing.signTokenAgent || '') : ''
       };
 
       renderSignatureBlocks_(doc, record);
@@ -622,6 +646,7 @@ function signRecord(token, payload) {
   const signatureType = String(payload.signatureType || '').trim();
   const password = String(payload.password || '');
   const rowNumber = Number(payload.rowNumber || 0);
+  const commentaire = String(payload.commentaire || '').trim();
 
   if (!rowNumber || rowNumber < 2) throw new Error('Ligne invalide.');
   if (!password) throw new Error('Mot de passe requis pour signer.');
@@ -634,6 +659,11 @@ function signRecord(token, payload) {
   if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
   if (!record.sourceDocFileId) throw new Error('Document source introuvable.');
   if (!record.pdfFileId && !record.sourceDocFileId) throw new Error('Aucun document associé.');
+
+  // Enregistrer le commentaire de l'intervenant
+  if (signatureType === 'intervenant' && commentaire) {
+    record.commentaireIntervenant = commentaire;
+  }
 
   applySignatureToRecord_(record, signatureType, session);
 
@@ -719,6 +749,83 @@ function bulkSignRecords(token, payload) {
   return { success: true, updatedCount: updated.length, skipped: skipped, updated: updated };
 }
 
+// ── Token de signature agent (stagiaire / externe) ──
+
+function generateSignToken(token, rowNumber) {
+  var session = requireSession_(token);
+  if (isAgent_(session)) throw new Error('Accès refusé.');
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var record = getTrackingRecordByRow_(rowNumber);
+  if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
+  if (record.statutSignatureAgent === APP.STATUS.SIGNED) throw new Error('Déjà signé par l\'agent.');
+
+  var signToken = Utilities.getUuid().split('-')[0].toUpperCase();
+  record.signTokenAgent = signToken;
+  record.majLe = new Date();
+  upsertTrackingRecord_(sheet, rowNumber, record);
+  SpreadsheetApp.flush();
+  return { success: true, signToken: signToken };
+}
+
+function signRecordByToken(signToken) {
+  setupWorkbookSilently_();
+  signToken = String(signToken || '').trim().toUpperCase();
+  if (!signToken) throw new Error('Token requis.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('Aucun enregistrement.');
+
+  // Chercher la ligne avec ce token (colonne 33 = SignTokenAgent)
+  var data = sheet.getRange(2, 33, lastRow - 1, 1).getValues();
+  var foundRow = -1;
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0] || '').trim().toUpperCase() === signToken) {
+      foundRow = i + 2;
+      break;
+    }
+  }
+  if (foundRow < 0) throw new Error('Token de signature introuvable ou expiré.');
+
+  var record = getTrackingRecordByRow_(foundRow);
+  if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
+  if (record.statutSignatureAgent === APP.STATUS.SIGNED) throw new Error('Déjà signé.');
+  if (!record.sourceDocFileId) throw new Error('Document source introuvable.');
+
+  record.statutSignatureAgent = APP.STATUS.SIGNED;
+  record.dateSignatureAgent = new Date();
+  record.signeAgentPar = (record.agentPrenom || record.agentName) + ' (token)';
+  record.signTokenAgent = ''; // Invalider le token après usage
+
+  var doc = openDocumentWithRetry_(record.sourceDocFileId, 5);
+  renderSignatureBlocks_(doc, record);
+  doc.saveAndClose();
+
+  var folder = DriveApp.getFileById(record.sourceDocFileId).getParents().hasNext()
+    ? DriveApp.getFileById(record.sourceDocFileId).getParents().next()
+    : DriveApp.getFolderById(String(getParamsMap_()[APP.PARAM_KEYS.OUTPUT_FOLDER_ID] || ''));
+
+  var pdfName = buildPdfName_(record.agentPrenom || extractFirstName_(record.agentName), parseLocalDate_(record.dateSession));
+  if (record.pdfFileId) trashFileIfExists_(record.pdfFileId);
+  trashFilesByNameInFolder_(folder, pdfName);
+  var pdfFile = regeneratePdfFromSource_(record, folder, pdfName);
+
+  record.pdfFileId = pdfFile.getId();
+  record.pdfUrl = pdfFile.getUrl();
+  record.statutPdf = APP.STATUS.PDF_GENERATED;
+  record.majLe = new Date();
+
+  upsertTrackingRecord_(sheet, foundRow, record);
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    message: 'Signature enregistrée. Merci ' + (record.agentPrenom || record.agentName) + ' !',
+    agentName: record.agentName,
+    intituleSession: record.intituleSession
+  };
+}
+
 function validateSessionPassword_(userId, password) {
   const users = getUsers_();
   const user = users.find(u => u.userId === String(userId || '').trim() && u.active);
@@ -790,6 +897,10 @@ function renderIntervenantBlock_(doc, record) {
     if (record.statutSignatureIntervenant === APP.STATUS.SIGNED) {
       const inserted = insertSignatureImageInCell_(signatureCell, buildIntervenantSignatureImageModel_(record), true);
       if (inserted) appendSignatureCaption_(signatureCell, buildIntervenantSignatureCaption_(record), true);
+      // Ajouter le commentaire de l'intervenant sous la signature
+      if (record.commentaireIntervenant) {
+        appendSignatureComment_(signatureCell, record.commentaireIntervenant);
+      }
     }
     appendHiddenMarker_(signatureCell, APP.MARKERS.INTERVENANT);
   } else {
@@ -834,6 +945,20 @@ function appendSignatureCaption_(cell, textValue, centered) {
   text.setItalic(true);
   text.setFontSize(7);
   try { text.setForegroundColor('#444444'); } catch (e) {}
+  try { text.setFontFamily('Arial'); } catch (e) {}
+  return paragraph;
+}
+
+function appendSignatureComment_(cell, comment) {
+  var paragraph = cell.appendParagraph('Commentaire : ' + String(comment || '').trim());
+  paragraph.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
+  paragraph.setSpacingBefore(4);
+  paragraph.setSpacingAfter(2);
+  var text = paragraph.editAsText();
+  text.setBold(false);
+  text.setItalic(true);
+  text.setFontSize(8);
+  try { text.setForegroundColor('#333366'); } catch (e) {}
   try { text.setFontFamily('Arial'); } catch (e) {}
   return paragraph;
 }
@@ -1154,7 +1279,22 @@ function initializeWorkbook_() {
     'SigneAgentPar',
     'DateGeneration',
     'GenerePar',
-    'MajLe'
+    'MajLe',
+    'CommentaireIntervenant',
+    'SignTokenAgent'
+  ]);
+
+  // ── Quiz sheets ──
+  ensureSheet_(ss, APP.SHEETS.QUIZ_MODELES, [
+    'ModeleId', 'Titre', 'Description', 'QuestionsJson', 'Actif', 'CreePar', 'CreeLe'
+  ]);
+  ensureSheet_(ss, APP.SHEETS.QUIZ_SESSIONS, [
+    'SessionId', 'Token', 'ModeleId', 'Titre', 'DateSession', 'Lieu', 'Duree', 'Actif', 'CreePar', 'CreeLe'
+  ]);
+  ensureSheet_(ss, APP.SHEETS.QUIZ_REPONSES, [
+    'ReponseId', 'SessionId', 'Matricule', 'Nom', 'Prenom', 'Groupe',
+    'IsExterne', 'ReponsesJson', 'Score', 'NoteMax', 'CorrigePar', 'CorrigeLe',
+    'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe', 'SourceDocFileId'
   ]);
 
   seedDefaultParams_();
@@ -1212,6 +1352,28 @@ function setupWorkbookSilently_() {
   rememberActiveSpreadsheet_();
   const ss = getAppSpreadsheet_();
   if (!ss.getSheetByName(APP.SHEETS.AGENTS)) initializeWorkbook_();
+  ensureQuizSheets_();
+}
+
+function ensureQuizSheets_() {
+  var ss = getAppSpreadsheet_();
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_MODELES)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_MODELES, [
+      'ModeleId', 'Titre', 'Description', 'QuestionsJson', 'Actif', 'CreePar', 'CreeLe'
+    ]);
+  }
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_SESSIONS)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_SESSIONS, [
+      'SessionId', 'Token', 'ModeleId', 'Titre', 'DateSession', 'Lieu', 'Duree', 'Actif', 'CreePar', 'CreeLe'
+    ]);
+  }
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_REPONSES)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_REPONSES, [
+      'ReponseId', 'SessionId', 'Matricule', 'Nom', 'Prenom', 'Groupe',
+      'IsExterne', 'ReponsesJson', 'Score', 'NoteMax', 'CorrigePar', 'CorrigeLe',
+      'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe', 'SourceDocFileId'
+    ]);
+  }
 }
 
 function upsertParam_(sheet, key, value) {
@@ -1234,8 +1396,10 @@ function getTrackingIndexByPeriod_(period) {
   data.forEach((row, i) => {
     const rowPeriod = String(row[1] || '').trim();
     const matricule = String(row[4] || '').trim();
+    const dateSession = String(row[2] || '').trim();
     if (rowPeriod === period && matricule) {
-      index[matricule] = mapTrackingRow_(row, i + 2);
+      const key = matricule + '|' + dateSession;
+      index[key] = mapTrackingRow_(row, i + 2);
     }
   });
   return index;
@@ -1249,12 +1413,12 @@ function getTrackingRecordByRow_(rowNumber) {
 }
 
 function mapTrackingRow_(row, rowNumber) {
-  while (row.length < 31) row.push('');
+  while (row.length < 33) row.push('');
   return {
     rowNumber: rowNumber,
     recordId: row[0],
     period: row[1],
-    dateSession: row[2],
+    dateSession: normalizeDate_(row[2]),
     monthLabel: row[3],
     agentMatricule: row[4],
     agentName: row[5],
@@ -1275,14 +1439,16 @@ function mapTrackingRow_(row, rowNumber) {
     pdfUrl: row[20],
     statutPdf: row[21],
     statutSignatureIntervenant: row[22],
-    dateSignatureIntervenant: row[23],
+    dateSignatureIntervenant: normalizeDate_(row[23]),
     signeIntervenantPar: row[24],
     statutSignatureAgent: row[25],
-    dateSignatureAgent: row[26],
+    dateSignatureAgent: normalizeDate_(row[26]),
     signeAgentPar: row[27],
-    dateGeneration: row[28],
+    dateGeneration: formatDateTimeFr_(row[28]),
     generePar: row[29],
-    majLe: row[30]
+    majLe: formatDateTimeFr_(row[30]),
+    commentaireIntervenant: String(row[31] || ''),
+    signTokenAgent: String(row[32] || '')
   };
 }
 
@@ -1337,7 +1503,9 @@ function upsertTrackingRecord_(sheet, rowNumber, record) {
     record.signeAgentPar,
     record.dateGeneration,
     record.generePar,
-    record.majLe
+    record.majLe,
+    record.commentaireIntervenant || '',
+    record.signTokenAgent || ''
   ]];
 
   if (rowNumber) {
@@ -1417,7 +1585,18 @@ function formatMaybeDateTimeFr_(value) {
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
   }
-  return String(value).trim();
+  var str = String(value).trim();
+  // ISO yyyy-MM-dd → dd/MM/yyyy
+  var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
+  // Déjà au format fr → retourner tel quel
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) return str;
+  // Tenter parse JS pour formats bruts restants
+  try {
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  } catch (e) {}
+  return str;
 }
 
 function replaceTextSafely_(body, placeholder, value) {
@@ -1452,11 +1631,52 @@ function parseLocalDate_(input) {
     return new Date(Number(frDateMatch[3]), Number(frDateMatch[2]) - 1, Number(frDateMatch[1]), 12, 0, 0);
   }
 
+  // Fallback : tenter un parse JS natif (ex: "Wed Jan 01 2025...")
+  try {
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+  } catch (e) {}
+
   throw new Error('Date de session invalide.');
 }
 
 function formatDateFr_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+}
+
+function normalizeDate_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var str = String(value).trim();
+  // Déjà au format ISO yyyy-MM-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Format fr dd/MM/yyyy → yyyy-MM-dd
+  var frMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (frMatch) return frMatch[3] + '-' + frMatch[2].padStart(2, '0') + '-' + frMatch[1].padStart(2, '0');
+  // Tenter un parse JavaScript (format brut type "Wed Jan 01 2025...")
+  try {
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  } catch (e) {}
+  return str;
+}
+
+function formatDateTimeFr_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  }
+  var str = String(value).trim();
+  // Si c'est déjà au format dd/MM/yyyy, on retourne tel quel
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) return str;
+  // Si c'est un ISO date
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    try { return Utilities.formatDate(new Date(str), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'); }
+    catch (e) { return str; }
+  }
+  return str;
 }
 
 function periodFromDate_(date) {
@@ -1504,11 +1724,13 @@ function sanitizeFileName_(str) {
 }
 
 function buildPdfName_(prenom, sessionDate) {
-  return 'PROD-ENR-004C-Feuille de présence - ' + sanitizeFileName_(prenom) + ' - ' + monthLabelFr_(sessionDate) + '.pdf';
+  var dateSuffix = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+  return 'PROD-ENR-004C-Feuille de présence - ' + sanitizeFileName_(prenom) + ' - ' + dateSuffix + '.pdf';
 }
 
 function buildSourceDocName_(fullName, sessionDate) {
-  return 'SRC - PROD-ENR-004C - ' + sanitizeFileName_(fullName) + ' - ' + monthLabelFr_(sessionDate);
+  var dateSuffix = Utilities.formatDate(sessionDate, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+  return 'SRC - PROD-ENR-004C - ' + sanitizeFileName_(fullName) + ' - ' + dateSuffix;
 }
 
 function appendLabeledLine_(body, label, placeholder) {
@@ -1537,4 +1759,807 @@ function openDocumentWithRetry_(docId, maxTries) {
 }
 function extractFirstName_(fullName) {
   return String(fullName || '').trim().split(/\s+/)[0] || '';
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  MODULE QUIZ — Backend                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// ── Accès données Quiz ──
+
+function getQuizModeles_() {
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_MODELES);
+  if (!sheet) return [];
+  var data = getDataRows_(sheet);
+  return data.map(function(row, i) {
+    return {
+      rowNumber: i + 2,
+      modeleId: String(row[0] || '').trim(),
+      titre: String(row[1] || '').trim(),
+      description: String(row[2] || '').trim(),
+      questionsJson: String(row[3] || '[]'),
+      actif: !/^non|false|0$/i.test(String(row[4] || 'OUI').trim()),
+      creePar: String(row[5] || '').trim(),
+      creeLe: row[6] ? formatDateTimeFr_(row[6]) : ''
+    };
+  }).filter(function(m) { return m.modeleId; });
+}
+
+function getQuizSessions_() {
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_SESSIONS);
+  if (!sheet) return [];
+  var data = getDataRows_(sheet);
+  return data.map(function(row, i) {
+    return {
+      rowNumber: i + 2,
+      sessionId: String(row[0] || '').trim(),
+      token: String(row[1] || '').trim(),
+      modeleId: String(row[2] || '').trim(),
+      titre: String(row[3] || '').trim(),
+      dateSession: normalizeDate_(row[4]),
+      lieu: String(row[5] || '').trim(),
+      duree: String(row[6] || '').trim(),
+      actif: !/^non|false|0$/i.test(String(row[7] || 'OUI').trim()),
+      creePar: String(row[8] || '').trim(),
+      creeLe: row[9] ? formatDateTimeFr_(row[9]) : ''
+    };
+  }).filter(function(s) { return s.sessionId; });
+}
+
+function getQuizReponses_() {
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  if (!sheet) return [];
+  var data = getDataRows_(sheet);
+  return data.map(function(row, i) {
+    return {
+      rowNumber: i + 2,
+      reponseId: String(row[0] || '').trim(),
+      sessionId: String(row[1] || '').trim(),
+      matricule: String(row[2] || '').trim(),
+      nom: String(row[3] || '').trim(),
+      prenom: String(row[4] || '').trim(),
+      groupe: String(row[5] || '').trim(),
+      isExterne: /^(oui|true|1)$/i.test(String(row[6] || 'NON').trim()),
+      reponsesJson: String(row[7] || '[]'),
+      score: row[8] !== undefined && row[8] !== '' ? Number(row[8]) : null,
+      noteMax: row[9] !== undefined && row[9] !== '' ? Number(row[9]) : null,
+      corrigePar: String(row[10] || '').trim(),
+      corrigeLe: row[11] ? formatDateTimeFr_(row[11]) : '',
+      pdfFileId: String(row[12] || '').trim(),
+      pdfUrl: String(row[13] || '').trim(),
+      trackingRowNumber: row[14] ? Number(row[14]) : null,
+      soumisLe: row[15] ? formatDateTimeFr_(row[15]) : '',
+      sourceDocFileId: String(row[16] || '').trim()
+    };
+  }).filter(function(r) { return r.reponseId; });
+}
+
+function getQuizReponsesBySession_(sessionId) {
+  return getQuizReponses_().filter(function(r) {
+    return r.sessionId === sessionId;
+  });
+}
+
+// ── Accès quiz par token (participant, pas besoin de session auth) ──
+
+function quizAccessByToken(tokenInput, matriculeInput) {
+  setupWorkbookSilently_();
+  var token = String(tokenInput || '').trim();
+  var matricule = String(matriculeInput || '').trim();
+  if (!token) throw new Error('Token requis.');
+
+  var sessions = getQuizSessions_();
+  var session = sessions.find(function(s) { return s.token === token && s.actif; });
+  if (!session) throw new Error('Session de quiz introuvable ou inactive.');
+
+  var modeles = getQuizModeles_();
+  var modele = modeles.find(function(m) { return m.modeleId === session.modeleId; });
+  if (!modele) throw new Error('Modèle de quiz introuvable.');
+
+  // Vérifier si déjà soumis
+  var reponses = getQuizReponsesBySession_(session.sessionId);
+  var existing = reponses.find(function(r) { return r.matricule === matricule; });
+  if (existing) throw new Error('Tu as déjà répondu à ce quiz.');
+
+  var questions = [];
+  try { questions = JSON.parse(modele.questionsJson); } catch (e) { questions = []; }
+
+  // Chercher l'agent par matricule
+  var agent = null;
+  if (matricule) {
+    var agents = getAgents_();
+    agent = agents.find(function(a) { return a.matricule === matricule; });
+  }
+
+  return {
+    sessionId: session.sessionId,
+    titre: session.titre || modele.titre,
+    description: modele.description,
+    dateSession: session.dateSession,
+    lieu: session.lieu,
+    duree: session.duree,
+    questions: questions.map(function(q) {
+      // Ne pas envoyer correctAnswer au participant
+      return {
+        id: q.id, type: q.type, question: q.question,
+        options: q.options || [], points: q.points || 1
+      };
+    }),
+    agent: agent ? { matricule: agent.matricule, fullName: agent.fullName, sousEquipe: agent.sousEquipe } : null,
+    isExterne: !agent
+  };
+}
+
+// ── Soumission des réponses par le participant ──
+
+function quizSubmitAnswers(payload) {
+  setupWorkbookSilently_();
+  var sessionId = String(payload.sessionId || '').trim();
+  var matricule = String(payload.matricule || '').trim();
+  var nom = String(payload.nom || '').trim();
+  var prenom = String(payload.prenom || '').trim();
+  var groupe = String(payload.groupe || '').trim();
+  var isExterne = !!payload.isExterne;
+  var answers = payload.answers || {};
+
+  if (!sessionId) throw new Error('Session ID manquant.');
+  if (!matricule && !nom) throw new Error('Identifiant ou nom requis.');
+
+  var sessions = getQuizSessions_();
+  var session = sessions.find(function(s) { return s.sessionId === sessionId && s.actif; });
+  if (!session) throw new Error('Session fermée ou introuvable.');
+
+  // Vérifier doublon
+  var reponses = getQuizReponsesBySession_(sessionId);
+  var key = matricule || (nom + ' ' + prenom).trim();
+  var existing = reponses.find(function(r) { return r.matricule === key; });
+  if (existing) throw new Error('Réponses déjà soumises.');
+
+  // Charger les questions pour correction auto
+  var modeles = getQuizModeles_();
+  var modele = modeles.find(function(m) { return m.modeleId === session.modeleId; });
+  var questions = [];
+  try { questions = JSON.parse(modele.questionsJson); } catch (e) { questions = []; }
+
+  // Correction automatique (QCM et vrai/faux)
+  var score = 0;
+  var noteMax = 0;
+  var detailedAnswers = questions.map(function(q) {
+    var userAnswer = answers[q.id] || '';
+    var points = Number(q.points || 1);
+    noteMax += points;
+    var correct = null;
+    if (q.type === 'qcm' || q.type === 'vrai_faux') {
+      correct = String(q.correctAnswer || '').trim().toLowerCase() === String(userAnswer).trim().toLowerCase();
+      if (correct) score += points;
+    }
+    return {
+      id: q.id, type: q.type, question: q.question,
+      userAnswer: userAnswer, correctAnswer: q.correctAnswer || '',
+      points: points, correct: correct
+    };
+  });
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  var reponseId = Utilities.getUuid();
+  sheet.appendRow([
+    reponseId,
+    sessionId,
+    matricule || key,
+    nom,
+    prenom,
+    groupe,
+    isExterne ? 'OUI' : 'NON',
+    JSON.stringify(detailedAnswers),
+    score,
+    noteMax,
+    '', // corrigePar
+    '', // corrigeLe
+    '', // pdfFileId
+    '', // pdfUrl
+    '', // trackingRowNumber
+    new Date() // soumisLe
+  ]);
+
+  return {
+    success: true,
+    score: score,
+    noteMax: noteMax,
+    message: 'Réponses enregistrées. Score provisoire : ' + score + '/' + noteMax
+  };
+}
+
+// ── Admin : gestion des modèles de quiz ──
+
+function getQuizBootstrapData(token) {
+  var session = requireSession_(token);
+  if (isAgent_(session)) throw new Error('Accès refusé.');
+  ensureQuizSheets_();
+  return {
+    modeles: getQuizModeles_(),
+    sessions: getQuizSessions_(),
+    reponses: getQuizReponses_()
+  };
+}
+
+function saveQuizModele(token, payload) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var modeleId = String(payload.modeleId || '').trim();
+  var titre = String(payload.titre || '').trim();
+  if (!titre) throw new Error('Titre requis.');
+
+  var questionsJson = JSON.stringify(payload.questions || []);
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_MODELES);
+
+  if (modeleId) {
+    // Mise à jour
+    var modeles = getQuizModeles_();
+    var existing = modeles.find(function(m) { return m.modeleId === modeleId; });
+    if (!existing) throw new Error('Modèle introuvable.');
+    var row = existing.rowNumber;
+    sheet.getRange(row, 1, 1, 7).setValues([[
+      modeleId,
+      titre,
+      String(payload.description || ''),
+      questionsJson,
+      payload.actif === false ? 'NON' : 'OUI',
+      existing.creePar,
+      existing.creeLe
+    ]]);
+  } else {
+    // Création
+    modeleId = Utilities.getUuid();
+    sheet.appendRow([
+      modeleId,
+      titre,
+      String(payload.description || ''),
+      questionsJson,
+      'OUI',
+      session.name,
+      new Date()
+    ]);
+  }
+  return { success: true, modeleId: modeleId };
+}
+
+function deleteQuizModele(token, modeleId) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_MODELES);
+  var modeles = getQuizModeles_();
+  var existing = modeles.find(function(m) { return m.modeleId === modeleId; });
+  if (!existing) throw new Error('Modèle introuvable.');
+  sheet.deleteRow(existing.rowNumber);
+  return { success: true };
+}
+
+// ── Admin : gestion des sessions de quiz ──
+
+function saveQuizSession(token, payload) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var sessionId = String(payload.sessionId || '').trim();
+  var titre = String(payload.titre || '').trim();
+  var modeleId = String(payload.modeleId || '').trim();
+  if (!titre) throw new Error('Titre requis.');
+  if (!modeleId) throw new Error('Modèle requis.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_SESSIONS);
+
+  if (sessionId) {
+    // Mise à jour
+    var sessions = getQuizSessions_();
+    var existing = sessions.find(function(s) { return s.sessionId === sessionId; });
+    if (!existing) throw new Error('Session introuvable.');
+    sheet.getRange(existing.rowNumber, 1, 1, 10).setValues([[
+      sessionId,
+      existing.token,
+      modeleId,
+      titre,
+      String(payload.dateSession || ''),
+      String(payload.lieu || ''),
+      String(payload.duree || ''),
+      payload.actif === false ? 'NON' : 'OUI',
+      existing.creePar,
+      existing.creeLe
+    ]]);
+  } else {
+    // Création avec token unique
+    sessionId = Utilities.getUuid();
+    var quizToken = Utilities.getUuid().split('-')[0].toUpperCase();
+    sheet.appendRow([
+      sessionId,
+      quizToken,
+      modeleId,
+      titre,
+      String(payload.dateSession || ''),
+      String(payload.lieu || ''),
+      String(payload.duree || ''),
+      'OUI',
+      session.name,
+      new Date()
+    ]);
+  }
+  return { success: true, sessionId: sessionId };
+}
+
+function toggleQuizSession(token, sessionId, actif) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_SESSIONS);
+  var sessions = getQuizSessions_();
+  var existing = sessions.find(function(s) { return s.sessionId === sessionId; });
+  if (!existing) throw new Error('Session introuvable.');
+  sheet.getRange(existing.rowNumber, 8).setValue(actif ? 'OUI' : 'NON');
+  return { success: true };
+}
+
+// ── Admin : correction manuelle ──
+
+function gradeQuizReponse(token, payload) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var reponseId = String(payload.reponseId || '').trim();
+  if (!reponseId) throw new Error('ID réponse manquant.');
+
+  var all = getQuizReponses_();
+  var reponse = all.find(function(r) { return r.reponseId === reponseId; });
+  if (!reponse) throw new Error('Réponse introuvable.');
+
+  var answers = [];
+  try { answers = JSON.parse(reponse.reponsesJson); } catch (e) { answers = []; }
+
+  // Appliquer les notes manuelles
+  var manualGrades = payload.grades || {};
+  var totalScore = 0;
+  var noteMax = 0;
+  answers.forEach(function(a) {
+    noteMax += Number(a.points || 1);
+    if (manualGrades[a.id] !== undefined) {
+      a.correct = manualGrades[a.id] > 0;
+      totalScore += Number(manualGrades[a.id]);
+    } else if (a.correct === true) {
+      totalScore += Number(a.points || 1);
+    }
+  });
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  var row = reponse.rowNumber;
+  sheet.getRange(row, 8).setValue(JSON.stringify(answers)); // ReponsesJson
+  sheet.getRange(row, 9).setValue(totalScore);              // Score
+  sheet.getRange(row, 10).setValue(noteMax);                // NoteMax
+  sheet.getRange(row, 11).setValue(session.name);           // CorrigePar
+  sheet.getRange(row, 12).setValue(new Date());             // CorrigeLe
+
+  return { success: true, score: totalScore, noteMax: noteMax };
+}
+
+// ── Admin : génération PDF du quiz rempli ──
+
+function generateQuizPdf(token, reponseId) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var all = getQuizReponses_();
+  var reponse = all.find(function(r) { return r.reponseId === reponseId; });
+  if (!reponse) throw new Error('Réponse introuvable.');
+
+  var sessions = getQuizSessions_();
+  var quizSession = sessions.find(function(s) { return s.sessionId === reponse.sessionId; });
+  if (!quizSession) throw new Error('Session de quiz introuvable.');
+
+  var params = getParamsMap_();
+  var outputFolderId = String(params[APP.PARAM_KEYS.OUTPUT_FOLDER_ID] || '').trim();
+  if (!outputFolderId) throw new Error('Dossier de sortie non configuré.');
+
+  var quizTemplateId = String(params[APP.PARAM_KEYS.QUIZ_TEMPLATE_ID] || '').trim();
+
+  var answers = [];
+  try { answers = JSON.parse(reponse.reponsesJson); } catch (e) { answers = []; }
+
+  var participantLabel = reponse.prenom
+    ? (reponse.prenom + ' ' + reponse.nom).trim()
+    : reponse.nom || reponse.matricule;
+  var docTitle = 'Quiz - ' + sanitizeFileName_(quizSession.titre) + ' - ' + sanitizeFileName_(participantLabel);
+
+  var outputFolder = DriveApp.getFolderById(outputFolderId);
+  var quizFolder = getOrCreateSubFolder_(outputFolder, 'Quiz');
+  var doc, body;
+
+  // Construire le contenu des questions formaté pour le template
+  var questionsContent = buildQuizQuestionsContent_(answers);
+  var scoreText = (reponse.score !== '' && reponse.score !== null ? reponse.score : '?') + ' / ' + (reponse.noteMax || '?');
+  var dateSessionFr = quizSession.dateSession ? formatMaybeDateFr_(quizSession.dateSession) : '-';
+
+  if (quizTemplateId) {
+    // ── Mode template : copie le modèle et remplace les placeholders ──
+    var templateFile = DriveApp.getFileById(quizTemplateId);
+    if (templateFile.getMimeType() !== MimeType.GOOGLE_DOCS) {
+      throw new Error("Le modèle Quiz doit être un Google Docs natif.");
+    }
+    var docCopy = templateFile.makeCopy(docTitle, quizFolder);
+    doc = openDocumentWithRetry_(docCopy.getId(), 5);
+    body = doc.getBody();
+
+    replaceTextSafely_(body, '{{QUIZ_TITRE}}', quizSession.titre || '');
+    replaceTextSafely_(body, '{{QUIZ_DATE}}', dateSessionFr);
+    replaceTextSafely_(body, '{{QUIZ_LIEU}}', quizSession.lieu || '-');
+    replaceTextSafely_(body, '{{QUIZ_DUREE}}', quizSession.duree || '-');
+    replaceTextSafely_(body, '{{PARTICIPANT_NOM}}', participantLabel);
+    replaceTextSafely_(body, '{{PARTICIPANT_MATRICULE}}', reponse.matricule || '-');
+    replaceTextSafely_(body, '{{PARTICIPANT_GROUPE}}', reponse.groupe || '-');
+    replaceTextSafely_(body, '{{QUIZ_SCORE}}', scoreText);
+    replaceTextSafely_(body, '{{QUIZ_QUESTIONS}}', questionsContent);
+    replaceTextSafely_(body, '{{DATE_GENERATION}}', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
+
+    // Préparer les ancres de signature si présentes dans le template
+    prepareAgentSignatureAnchor_(doc);
+
+  } else {
+    // ── Mode sans template : génération programmatique ──
+    doc = DocumentApp.create(docTitle);
+    body = doc.getBody();
+    body.clear();
+    body.setMarginTop(36).setMarginBottom(36).setMarginLeft(54).setMarginRight(54);
+
+    var headerTable = body.appendTable([['QUIZ - ÉVALUATION', quizSession.titre]]);
+    headerTable.setBorderWidth(0);
+    var hRow = headerTable.getRow(0);
+    hRow.getCell(0).editAsText().setBold(true).setFontSize(14).setForegroundColor('#1a1a2e');
+    hRow.getCell(1).editAsText().setBold(true).setFontSize(12).setForegroundColor('#333333');
+    hRow.setMinimumHeight(36);
+    body.appendParagraph('').setSpacingAfter(4);
+
+    var infoTable = body.appendTable([
+      ['Date :', dateSessionFr, 'Lieu :', quizSession.lieu || '-'],
+      ['Durée :', quizSession.duree || '-', 'Participant :', participantLabel]
+    ]);
+    infoTable.setBorderWidth(1).setBorderColor('#cccccc');
+    for (var ir = 0; ir < 2; ir++) {
+      for (var ic = 0; ic < 4; ic++) {
+        var cell = infoTable.getRow(ir).getCell(ic);
+        cell.editAsText().setFontSize(9);
+        if (ic % 2 === 0) { cell.setBackgroundColor('#f0f0f8'); cell.editAsText().setBold(true); }
+      }
+    }
+
+    if (reponse.matricule) {
+      var matRow = body.appendParagraph('Matricule : ' + reponse.matricule + (reponse.groupe ? '  |  Groupe : ' + reponse.groupe : ''));
+      matRow.editAsText().setFontSize(9).setForegroundColor('#555555');
+    }
+    body.appendParagraph('').setSpacingAfter(8);
+
+    var scorePara = body.appendParagraph('Score : ' + scoreText);
+    scorePara.editAsText().setBold(true).setFontSize(12).setForegroundColor('#1a1a2e');
+    scorePara.setSpacingAfter(10);
+
+    answers.forEach(function(a, idx) {
+      var qTitle = body.appendParagraph('Question ' + (idx + 1) + ' (' + (a.points || 1) + ' pt' + ((a.points || 1) > 1 ? 's' : '') + ') — ' + (a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre'));
+      qTitle.editAsText().setBold(true).setFontSize(10).setForegroundColor('#1a1a2e');
+      qTitle.setSpacingBefore(10).setSpacingAfter(3);
+
+      var qText = body.appendParagraph(String(a.question || ''));
+      qText.editAsText().setFontSize(10);
+      qText.setSpacingAfter(4);
+
+      var aPara = body.appendParagraph('Réponse : ' + String(a.userAnswer || '(aucune)'));
+      aPara.editAsText().setFontSize(10);
+
+      if (a.type === 'qcm' || a.type === 'vrai_faux') {
+        body.appendParagraph('Bonne réponse : ' + String(a.correctAnswer || '-'))
+          .editAsText().setFontSize(9).setForegroundColor('#555555');
+        body.appendParagraph(a.correct ? '✓ Correct' : '✗ Incorrect')
+          .editAsText().setBold(true).setFontSize(10)
+          .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+      } else if (a.correct !== null && a.correct !== undefined) {
+        body.appendParagraph(a.correct ? '✓ Validé' : '✗ Non validé')
+          .editAsText().setBold(true).setFontSize(10)
+          .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+      }
+
+      if (idx < answers.length - 1) {
+        body.appendParagraph('─────────────────────────────')
+          .editAsText().setFontSize(6).setForegroundColor('#cccccc');
+      }
+    });
+
+    body.appendParagraph('').setSpacingAfter(12);
+    body.appendParagraph('Document généré le ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+      .editAsText().setFontSize(8).setForegroundColor('#999999').setItalic(true);
+
+    // Déplacer dans le bon dossier
+    var tmpFile = DriveApp.getFileById(doc.getId());
+    quizFolder.addFile(tmpFile);
+    DriveApp.getRootFolder().removeFile(tmpFile);
+  }
+
+  doc.saveAndClose();
+
+  // Convertir en PDF
+  var docFileId = doc.getId();
+  Utilities.sleep(1500);
+  var pdfBlob = DriveApp.getFileById(docFileId).getAs(MimeType.PDF).setName(docTitle + '.pdf');
+  var pdfFile = quizFolder.createFile(pdfBlob);
+
+  // Mettre à jour la réponse avec le PDF + sourceDocId
+  var repSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  repSheet.getRange(reponse.rowNumber, 13).setValue(pdfFile.getId());    // PdfFileId
+  repSheet.getRange(reponse.rowNumber, 14).setValue(pdfFile.getUrl());   // PdfUrl
+  repSheet.getRange(reponse.rowNumber, 17).setValue(docFileId);          // SourceDocFileId
+
+  return { success: true, pdfUrl: pdfFile.getUrl(), pdfFileId: pdfFile.getId(), sourceDocFileId: docFileId };
+}
+
+function buildQuizQuestionsContent_(answers) {
+  return answers.map(function(a, idx) {
+    var parts = [];
+    var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
+    parts.push('Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) - ' + typeLabel + ' : ' + String(a.question || ''));
+    parts.push('  Réponse : ' + String(a.userAnswer || '(aucune)'));
+    if (a.type === 'qcm' || a.type === 'vrai_faux') {
+      parts.push('  Bonne réponse : ' + String(a.correctAnswer || '-'));
+      parts.push('  ' + (a.correct ? '✓ Correct' : '✗ Incorrect'));
+    } else if (a.correct !== null && a.correct !== undefined) {
+      parts.push('  ' + (a.correct ? '✓ Validé' : '✗ Non validé'));
+    }
+    return parts.join('\n');
+  }).join('\n\n');
+}
+
+// ── Rattachement quiz au module émargement/tracking ──
+
+function linkQuizToTracking(token, reponseId) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var all = getQuizReponses_();
+  var reponse = all.find(function(r) { return r.reponseId === reponseId; });
+  if (!reponse) throw new Error('Réponse introuvable.');
+  if (reponse.trackingRowNumber) throw new Error('Déjà rattaché au suivi.');
+  if (!reponse.pdfFileId) throw new Error('Générez d\'abord le PDF avant de rattacher.');
+
+  var sessions = getQuizSessions_();
+  var quizSession = sessions.find(function(s) { return s.sessionId === reponse.sessionId; });
+  if (!quizSession) throw new Error('Session de quiz introuvable.');
+
+  // Chercher l'agent
+  var agent = null;
+  if (reponse.matricule && !reponse.isExterne) {
+    var agents = getAgents_();
+    agent = agents.find(function(a) { return a.matricule === reponse.matricule; });
+  }
+
+  var participantLabel = reponse.prenom
+    ? (reponse.prenom + ' ' + reponse.nom).trim()
+    : reponse.nom || reponse.matricule;
+
+  var dateSession = quizSession.dateSession ? parseLocalDate_(quizSession.dateSession) : new Date();
+  var period = periodFromDate_(dateSession);
+  var monthLabel = monthLabelFr_(dateSession);
+
+  var trackingSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var record = {
+    recordId: Utilities.getUuid(),
+    period: period,
+    dateSession: Utilities.formatDate(dateSession, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    monthLabel: monthLabel,
+    agentMatricule: reponse.matricule || '',
+    agentName: participantLabel,
+    agentPrenom: reponse.prenom || extractFirstName_(participantLabel),
+    sousEquipe: agent ? agent.sousEquipe : (reponse.groupe || ''),
+    intituleSession: 'Quiz : ' + (quizSession.titre || ''),
+    duree: quizSession.duree || '',
+    lieu: quizSession.lieu || '',
+    intervenantUserId: session.userId,
+    intervenantNom: session.name,
+    intervenantTitle: session.title || APP.SIGNATURE_TITLE_DEFAULT,
+    themeModel: '',
+    themesText: 'Score : ' + (reponse.score !== null ? reponse.score : '?') + '/' + (reponse.noteMax || '?'),
+    remarques: 'Quiz rattaché automatiquement',
+    sourceDocFileId: reponse.sourceDocFileId || '',
+    sourceDocUrl: reponse.sourceDocFileId ? ('https://docs.google.com/document/d/' + reponse.sourceDocFileId + '/edit') : '',
+    pdfFileId: reponse.pdfFileId,
+    pdfUrl: reponse.pdfUrl,
+    statutPdf: APP.STATUS.PDF_GENERATED,
+    statutSignatureIntervenant: APP.STATUS.PENDING,
+    dateSignatureIntervenant: '',
+    signeIntervenantPar: '',
+    statutSignatureAgent: APP.STATUS.PENDING,
+    dateSignatureAgent: '',
+    signeAgentPar: '',
+    dateGeneration: new Date(),
+    generePar: session.name,
+    majLe: new Date(),
+    commentaireIntervenant: '',
+    signTokenAgent: ''
+  };
+
+  upsertTrackingRecord_(trackingSheet, null, record);
+  SpreadsheetApp.flush();
+
+  // Récupérer le rowNumber de la nouvelle ligne
+  var lastRow = trackingSheet.getLastRow();
+  var repSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  repSheet.getRange(reponse.rowNumber, 15).setValue(lastRow); // TrackingRowNumber
+
+  return { success: true, message: 'Quiz rattaché au suivi — visible dans le dashboard et signeable.' };
+}
+
+// ── Import réponses quiz depuis Google Sheet (Google Forms) ──
+
+function importQuizResponsesFromSheet(token, payload) {
+  var session = requireSession_(token);
+  if (!isAdmin_(session)) throw new Error('Accès réservé admin.');
+
+  var sessionId = String(payload.sessionId || '').trim();
+  if (!sessionId) throw new Error('Session de quiz manquante.');
+
+  var sheetUrl = String(payload.sheetUrl || '').trim();
+  if (!sheetUrl) throw new Error('URL du Google Sheet requis.');
+
+  // Vérifier que la session existe
+  var quizSessions = getQuizSessions_();
+  var quizSession = quizSessions.find(function(s) { return s.sessionId === sessionId; });
+  if (!quizSession) throw new Error('Session de quiz introuvable.');
+
+  // Charger le modèle pour connaître les questions
+  var modeles = getQuizModeles_();
+  var modele = modeles.find(function(m) { return m.modeleId === quizSession.modeleId; });
+  if (!modele) throw new Error('Modèle de quiz introuvable.');
+
+  var questions = [];
+  try { questions = JSON.parse(modele.questionsJson || '[]'); } catch (e) { questions = []; }
+
+  // Ouvrir le Google Sheet source
+  var sourceSpreadsheet;
+  try {
+    var fileId = extractFileIdFromUrl_(sheetUrl);
+    sourceSpreadsheet = SpreadsheetApp.openById(fileId);
+  } catch (e) {
+    throw new Error('Impossible d\'ouvrir le Google Sheet. Vérifiez l\'URL et les droits d\'accès. ' + e.message);
+  }
+
+  var sourceSheet = sourceSpreadsheet.getSheets()[0]; // premier onglet
+  var lastRow = sourceSheet.getLastRow();
+  var startRow = parseInt(payload.startRow) || 2;
+  if (lastRow < startRow) throw new Error('Le Sheet source ne contient aucune donnée à partir de la ligne ' + startRow + '.');
+
+  var lastCol = sourceSheet.getLastColumn();
+  var dataRange = sourceSheet.getRange(startRow, 1, lastRow - startRow + 1, lastCol);
+  var data = dataRange.getValues();
+
+  // Mapper les lettres de colonne vers indices (A=0, B=1, etc.)
+  function colLetterToIndex(letter) {
+    letter = String(letter || '').trim().toUpperCase();
+    if (!letter) return -1;
+    var idx = 0;
+    for (var i = 0; i < letter.length; i++) {
+      idx = idx * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return idx - 1; // 0-based
+  }
+
+  var colMatIdx = colLetterToIndex(payload.colMatricule || 'B');
+  var colNomIdx = colLetterToIndex(payload.colNom || 'C');
+  var colPrenomIdx = colLetterToIndex(payload.colPrenom || 'D');
+  var colGroupeIdx = colLetterToIndex(payload.colGroupe || 'E');
+
+  // Mapper les questions vers leurs colonnes
+  var questionMappings = payload.questionMappings || [];
+  var qColMap = {};
+  questionMappings.forEach(function(m) {
+    qColMap[m.questionId] = colLetterToIndex(m.column);
+  });
+
+  // Charger les réponses existantes pour détecter les doublons
+  var existingReponses = getQuizReponsesBySession_(sessionId);
+  var existingKeys = {};
+  existingReponses.forEach(function(r) {
+    existingKeys[r.matricule] = true;
+  });
+
+  var repSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  var agents = getAgents_();
+
+  var imported = 0;
+  var skipped = 0;
+
+  data.forEach(function(row) {
+    var matricule = String(row[colMatIdx] || '').trim();
+    var nom = String(row[colNomIdx] || '').trim();
+    var prenom = colPrenomIdx >= 0 ? String(row[colPrenomIdx] || '').trim() : '';
+    var groupe = colGroupeIdx >= 0 ? String(row[colGroupeIdx] || '').trim() : '';
+
+    // Ignorer lignes vides
+    var key = matricule || (nom + ' ' + prenom).trim();
+    if (!key) return;
+
+    // Vérifier doublon
+    if (existingKeys[key]) { skipped++; return; }
+
+    // Déterminer si c'est un agent connu
+    var agent = null;
+    if (matricule) {
+      agent = agents.find(function(a) { return a.matricule === matricule; });
+    }
+    var isExterne = !agent;
+
+    // Si l'agent est trouvé et nom/prenom vides, les remplir
+    if (agent && !nom) {
+      var parts = (agent.fullName || '').split(' ');
+      prenom = prenom || parts[0] || '';
+      nom = parts.slice(1).join(' ') || agent.fullName || '';
+      groupe = groupe || agent.sousEquipe || '';
+    }
+
+    // Collecter les réponses
+    var answers = {};
+    questions.forEach(function(q) {
+      var colIdx = qColMap[q.id];
+      if (colIdx !== undefined && colIdx >= 0 && colIdx < row.length) {
+        answers[q.id] = String(row[colIdx] || '').trim();
+      }
+    });
+
+    // Correction automatique (QCM et vrai/faux)
+    var score = 0;
+    var noteMax = 0;
+    var detailedAnswers = questions.map(function(q) {
+      var userAnswer = answers[q.id] || '';
+      var points = Number(q.points || 1);
+      noteMax += points;
+      var correct = null;
+      if (q.type === 'qcm' || q.type === 'vrai_faux') {
+        correct = String(q.correctAnswer || '').trim().toLowerCase() === String(userAnswer).trim().toLowerCase();
+        if (correct) score += points;
+      }
+      return {
+        id: q.id, type: q.type, question: q.question,
+        userAnswer: userAnswer, correctAnswer: q.correctAnswer || '',
+        points: points, correct: correct
+      };
+    });
+
+    var reponseId = Utilities.getUuid();
+    repSheet.appendRow([
+      reponseId,
+      sessionId,
+      key,
+      nom,
+      prenom,
+      groupe,
+      isExterne ? 'OUI' : 'NON',
+      JSON.stringify(detailedAnswers),
+      score,
+      noteMax,
+      '', // corrigePar
+      '', // corrigeLe
+      '', // pdfFileId
+      '', // pdfUrl
+      '', // trackingRowNumber
+      new Date() // soumisLe
+    ]);
+
+    existingKeys[key] = true;
+    imported++;
+  });
+
+  SpreadsheetApp.flush();
+  return { success: true, imported: imported, skipped: skipped };
+}
+
+function extractFileIdFromUrl_(url) {
+  // Supporte les URLs Google Sheets/Drive standards
+  var match = String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  // Peut-être un ID direct
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(String(url).trim())) return url.trim();
+  throw new Error('URL invalide : impossible d\'extraire l\'ID du fichier.');
 }
