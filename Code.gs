@@ -1606,6 +1606,7 @@ function extractFirstName_(fullName) {
 
 function getQuizModeles_() {
   var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_MODELES);
+  if (!sheet) return [];
   var data = getDataRows_(sheet);
   return data.map(function(row, i) {
     return {
@@ -1616,13 +1617,14 @@ function getQuizModeles_() {
       questionsJson: String(row[3] || '[]'),
       actif: !/^non|false|0$/i.test(String(row[4] || 'OUI').trim()),
       creePar: String(row[5] || '').trim(),
-      creeLe: row[6]
+      creeLe: row[6] ? String(row[6]) : ''
     };
   }).filter(function(m) { return m.modeleId; });
 }
 
 function getQuizSessions_() {
   var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_SESSIONS);
+  if (!sheet) return [];
   var data = getDataRows_(sheet);
   return data.map(function(row, i) {
     return {
@@ -1636,13 +1638,14 @@ function getQuizSessions_() {
       duree: String(row[6] || '').trim(),
       actif: !/^non|false|0$/i.test(String(row[7] || 'OUI').trim()),
       creePar: String(row[8] || '').trim(),
-      creeLe: row[9]
+      creeLe: row[9] ? String(row[9]) : ''
     };
   }).filter(function(s) { return s.sessionId; });
 }
 
 function getQuizReponses_() {
   var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  if (!sheet) return [];
   var data = getDataRows_(sheet);
   return data.map(function(row, i) {
     return {
@@ -1653,16 +1656,16 @@ function getQuizReponses_() {
       nom: String(row[3] || '').trim(),
       prenom: String(row[4] || '').trim(),
       groupe: String(row[5] || '').trim(),
-      isExterne: /^oui|true|1$/i.test(String(row[6] || 'NON').trim()),
+      isExterne: /^(oui|true|1)$/i.test(String(row[6] || 'NON').trim()),
       reponsesJson: String(row[7] || '[]'),
-      score: row[8],
-      noteMax: row[9],
+      score: row[8] !== undefined && row[8] !== '' ? Number(row[8]) : null,
+      noteMax: row[9] !== undefined && row[9] !== '' ? Number(row[9]) : null,
       corrigePar: String(row[10] || '').trim(),
-      corrigeLe: row[11],
+      corrigeLe: row[11] ? String(row[11]) : '',
       pdfFileId: String(row[12] || '').trim(),
       pdfUrl: String(row[13] || '').trim(),
       trackingRowNumber: row[14] ? Number(row[14]) : null,
-      soumisLe: row[15]
+      soumisLe: row[15] ? String(row[15]) : ''
     };
   }).filter(function(r) { return r.reponseId; });
 }

@@ -1900,6 +1900,7 @@
         state.quizReponses = data.reponses || [];
       } catch (err) {
         console.warn('Quiz data load error:', err.message);
+        showToast('Erreur chargement quiz : ' + err.message, 'error');
         state.quizModeles = [];
         state.quizSessions = [];
         state.quizReponses = [];
