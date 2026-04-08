@@ -259,8 +259,11 @@
       </div>
       <p id="loginError" class="mini" style="color:#d96a63; margin-top:12px;"></p>
       <div style="margin-top:18px;text-align:center;border-top:1px solid var(--line);padding-top:14px;">
-        <p class="mini">Tu dois passer un quiz ?</p>
-        <button class="btn-secondary" onclick="showQuizAccess()">Accéder à un Quiz</button>
+        <p class="mini">Tu dois passer un quiz ou signer un document ?</p>
+        <div class="toolbar" style="justify-content:center;gap:8px;">
+          <button class="btn-secondary" onclick="showQuizAccess()">Accéder à un Quiz</button>
+          <button class="btn-secondary" onclick="showTokenSign()">Signer avec un token</button>
+        </div>
       </div>
     </div>
   </div>
@@ -808,6 +811,10 @@
             <label>ID du dossier de sortie Drive</label>
             <input id="outputFolderId" type="text" />
           </div>
+          <div style="margin-top:12px;">
+            <label>ID du modèle Quiz (Google Docs, optionnel)</label>
+            <input id="quizTemplateId" type="text" placeholder="Laisser vide pour génération sans modèle" />
+          </div>
           <div style="margin-top:12px;" class="grid grid-3">
             <div>
               <label>Intitulé par défaut</label>
@@ -986,6 +993,7 @@
       document.getElementById('appName').value = state.settings.appName || '';
       document.getElementById('templateId').value = state.settings.templateId || '';
       document.getElementById('outputFolderId').value = state.settings.outputFolderId || '';
+      document.getElementById('quizTemplateId').value = state.settings.quizTemplateId || '';
       document.getElementById('defaultTitle').value = state.settings.defaultTitle || '';
       document.getElementById('defaultDuration').value = state.settings.defaultDuration || '';
       document.getElementById('defaultLocation').value = state.settings.defaultLocation || '';
@@ -1405,6 +1413,7 @@
           <div class="status-actions" style="margin-top:8px;">
             ${row.canSignIntervenant ? `<button class="btn-success" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'intervenant')">✍️ Signer (Team leader)</button>` : ''}
             ${row.canSignAgent ? `<button class="btn-secondary" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Signer (Ambassadeur)</button>` : ''}
+            ${isAdminRole && row.statutSignatureAgent !== 'Signé' ? (row.signTokenAgent ? `<span class="pill pill-muted" style="font-size:11px;">Token: ${escapeHtml(row.signTokenAgent)}</span>` : `<button class="btn-secondary" style="font-size:12px;" onclick="adminGenerateSignToken(${row.rowNumber})">🔑 Token agent</button>`) : ''}
             ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.pdfUrl)}" target="_blank">📄 PDF</a>` : ''}
           </div>
         </div>
@@ -1491,6 +1500,10 @@
       document.getElementById('signatureModalTitle').textContent = (config && config.title) || 'Signature';
       document.getElementById('signatureModalSummary').innerHTML = (config && config.summary) || '';
       document.getElementById('signatureModalPassword').value = '';
+      document.getElementById('signatureModalComment').value = '';
+      // Afficher le champ commentaire uniquement pour la signature intervenant (pas bulk)
+      const showComment = config && config.signatureType === 'intervenant' && config.mode !== 'bulk';
+      document.getElementById('signatureModalCommentWrap').classList.toggle('hidden', !showComment);
       document.getElementById('signatureModal').classList.remove('hidden');
       document.getElementById('signatureModalPassword').focus();
     }
@@ -1499,6 +1512,7 @@
       state.signatureModal = null;
       document.getElementById('signatureModal').classList.add('hidden');
       document.getElementById('signatureModalPassword').value = '';
+      document.getElementById('signatureModalComment').value = '';
     }
 
     async function confirmSignatureModal() {
@@ -1521,7 +1535,8 @@
             ? `${result.updatedCount || 0} fiche(s) signée(s). ${skippedCount} fiche(s) ignorée(s).`
             : `${result.updatedCount || 0} fiche(s) signée(s) et PDF régénérés.`);
         } else {
-          await rpc('signRecord', state.token, { rowNumber: modal.rowNumber, signatureType: modal.signatureType, password });
+          const commentaire = document.getElementById('signatureModalComment').value.trim();
+          await rpc('signRecord', state.token, { rowNumber: modal.rowNumber, signatureType: modal.signatureType, password, commentaire });
           closeSignatureModal();
           showLoading(false);
           await loadDashboard();
@@ -1589,6 +1604,7 @@
         defaultTitle: document.getElementById('defaultTitle').value.trim(),
         defaultDuration: document.getElementById('defaultDuration').value.trim(),
         defaultLocation: document.getElementById('defaultLocation').value.trim(),
+        quizTemplateId: document.getElementById('quizTemplateId').value.trim(),
         themeModels: collectThemeModels()
       };
       if (!payload.templateId) return showToast('L\'ID du modèle Google Doc est requis.', 'error');
@@ -2327,6 +2343,58 @@
         ).join('');
     }
 
+    // ══════════════════════════════════════════════
+    // ██  Signature par token (stagiaire/externe)
+    // ══════════════════════════════════════════════
+
+    function showTokenSign() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('tokenSignView').classList.remove('hidden');
+      document.getElementById('tokenSignInput').value = '';
+      document.getElementById('tokenSignError').textContent = '';
+      document.getElementById('tokenSignSuccess').classList.add('hidden');
+    }
+
+    function hideTokenSign() {
+      document.getElementById('tokenSignView').classList.add('hidden');
+      document.getElementById('loginView').classList.remove('hidden');
+    }
+
+    async function submitTokenSign() {
+      const tokenVal = document.getElementById('tokenSignInput').value.trim();
+      const errEl = document.getElementById('tokenSignError');
+      errEl.textContent = '';
+      if (!tokenVal) { errEl.textContent = 'Token requis.'; return; }
+      const btn = document.querySelector('#tokenSignView .btn-primary');
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('signRecordByToken', tokenVal);
+          document.getElementById('tokenSignSuccess').classList.remove('hidden');
+          document.getElementById('tokenSignSuccessText').textContent =
+            res.message || 'Signature enregistrée.';
+          document.querySelector('#tokenSignView .toolbar').classList.add('hidden');
+          document.querySelector('#tokenSignView input').disabled = true;
+        } catch (err) {
+          errEl.textContent = err.message;
+        }
+      });
+    }
+
+    // Générer un token de signature agent (admin)
+    async function adminGenerateSignToken(rowNumber) {
+      const btn = event && event.target;
+      await withButtonLock(btn, async () => {
+        try {
+          const res = await rpc('generateSignToken', state.token, rowNumber);
+          showToast('Token de signature généré : ' + res.signToken, 'success');
+          prompt('Token de signature à envoyer au participant :', res.signToken);
+          await loadSignatureQueue();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       applyTheme();
       ['loginUserId', 'loginPassword'].forEach(id => {
@@ -2359,6 +2427,10 @@
     <div class="modal-panel">
       <h3 id="signatureModalTitle">Signer</h3>
       <div id="signatureModalSummary" class="modal-summary mini" style="margin-top:10px;"></div>
+      <div id="signatureModalCommentWrap" class="hidden" style="margin-top:14px;">
+        <label>Commentaire (optionnel, reporté sur le PDF)</label>
+        <textarea id="signatureModalComment" rows="2" placeholder="Ajouter un commentaire..." style="width:100%;"></textarea>
+      </div>
       <div style="margin-top:14px;">
         <label>Mot de passe</label>
         <input id="signatureModalPassword" type="password" placeholder="Mot de passe" />
@@ -2366,6 +2438,29 @@
       <div class="modal-actions">
         <button class="btn-secondary" onclick="closeSignatureModal()">Annuler</button>
         <button class="btn-primary" onclick="confirmSignatureModal()">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue signature par token (stagiaire / externe) -->
+  <div id="tokenSignView" class="login-wrap hidden">
+    <div class="card glass-card" style="width:min(500px,100%);text-align:center;">
+      <div style="font-size:36px;margin-bottom:6px;">✍️</div>
+      <h2>Signer avec un token</h2>
+      <p class="muted">Saisis le token de signature fourni par ton responsable.</p>
+      <div style="margin-top:14px;">
+        <label>Token de signature</label>
+        <input id="tokenSignInput" type="text" placeholder="Ex. A1B2C3D4" />
+      </div>
+      <div class="toolbar" style="margin-top:16px;justify-content:center;">
+        <button class="btn-primary" onclick="submitTokenSign()">Signer</button>
+        <button class="btn-secondary" onclick="hideTokenSign()">Retour</button>
+      </div>
+      <p id="tokenSignError" class="mini" style="color:#d96a63;margin-top:10px;"></p>
+      <div id="tokenSignSuccess" class="hidden" style="margin-top:14px;">
+        <div style="font-size:48px;margin-bottom:10px;">✅</div>
+        <p id="tokenSignSuccessText" class="muted"></p>
+        <button class="btn-secondary" style="margin-top:12px;" onclick="hideTokenSign()">Fermer</button>
       </div>
     </div>
   </div>

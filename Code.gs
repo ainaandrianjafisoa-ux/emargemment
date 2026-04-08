@@ -310,7 +310,8 @@ function getBootstrapData(token) {
       defaultTitle: params[APP.PARAM_KEYS.DEFAULT_TITLE] || '',
       defaultDuration: params[APP.PARAM_KEYS.DEFAULT_DURATION] || '',
       defaultLocation: params[APP.PARAM_KEYS.DEFAULT_LOCATION] || '',
-      appName: params[APP.PARAM_KEYS.APP_NAME] || 'Émargement mensuel'
+      appName: params[APP.PARAM_KEYS.APP_NAME] || 'Émargement mensuel',
+      quizTemplateId: params[APP.PARAM_KEYS.QUIZ_TEMPLATE_ID] || ''
     },
     agents: getAgents_(),
     users: isAdmin_(session) ? getUsers_() : [],
@@ -380,7 +381,8 @@ function getSignatureQueue(token, period) {
     canSignIntervenant: canSessionSignIntervenant_(session, rec),
     canSignAgent: canSessionSignAgent_(session, rec),
     signatureIntervenantAt: formatMaybeDateTimeFr_(rec.dateSignatureIntervenant),
-    signatureAgentAt: formatMaybeDateTimeFr_(rec.dateSignatureAgent)
+    signatureAgentAt: formatMaybeDateTimeFr_(rec.dateSignatureAgent),
+    signTokenAgent: isAdmin_(session) ? String(rec.signTokenAgent || '') : ''
   }));
 
   return { period: cleanPeriod, rows };
@@ -399,6 +401,7 @@ function saveSettings(token, payload) {
   upsertParam_(paramsSheet, APP.PARAM_KEYS.DEFAULT_DURATION, String(payload.defaultDuration || '').trim());
   upsertParam_(paramsSheet, APP.PARAM_KEYS.DEFAULT_LOCATION, String(payload.defaultLocation || '').trim());
   upsertParam_(paramsSheet, APP.PARAM_KEYS.APP_NAME, String(payload.appName || 'Émargement mensuel').trim());
+  upsertParam_(paramsSheet, APP.PARAM_KEYS.QUIZ_TEMPLATE_ID, String(payload.quizTemplateId || '').trim());
 
   if (Array.isArray(payload.themeModels)) {
     const sheet = ss.getSheetByName(APP.SHEETS.THEME_MODELS);
@@ -571,7 +574,9 @@ function generateAttendancePdfs(token, payload) {
         signeAgentPar: existing ? existing.signeAgentPar : '',
         dateGeneration: new Date(),
         generePar: session.name,
-        majLe: new Date()
+        majLe: new Date(),
+        commentaireIntervenant: existing ? (existing.commentaireIntervenant || '') : '',
+        signTokenAgent: existing ? (existing.signTokenAgent || '') : ''
       };
 
       renderSignatureBlocks_(doc, record);
@@ -641,6 +646,7 @@ function signRecord(token, payload) {
   const signatureType = String(payload.signatureType || '').trim();
   const password = String(payload.password || '');
   const rowNumber = Number(payload.rowNumber || 0);
+  const commentaire = String(payload.commentaire || '').trim();
 
   if (!rowNumber || rowNumber < 2) throw new Error('Ligne invalide.');
   if (!password) throw new Error('Mot de passe requis pour signer.');
@@ -653,6 +659,11 @@ function signRecord(token, payload) {
   if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
   if (!record.sourceDocFileId) throw new Error('Document source introuvable.');
   if (!record.pdfFileId && !record.sourceDocFileId) throw new Error('Aucun document associé.');
+
+  // Enregistrer le commentaire de l'intervenant
+  if (signatureType === 'intervenant' && commentaire) {
+    record.commentaireIntervenant = commentaire;
+  }
 
   applySignatureToRecord_(record, signatureType, session);
 
@@ -738,6 +749,83 @@ function bulkSignRecords(token, payload) {
   return { success: true, updatedCount: updated.length, skipped: skipped, updated: updated };
 }
 
+// ── Token de signature agent (stagiaire / externe) ──
+
+function generateSignToken(token, rowNumber) {
+  var session = requireSession_(token);
+  if (isAgent_(session)) throw new Error('Accès refusé.');
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var record = getTrackingRecordByRow_(rowNumber);
+  if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
+  if (record.statutSignatureAgent === APP.STATUS.SIGNED) throw new Error('Déjà signé par l\'agent.');
+
+  var signToken = Utilities.getUuid().split('-')[0].toUpperCase();
+  record.signTokenAgent = signToken;
+  record.majLe = new Date();
+  upsertTrackingRecord_(sheet, rowNumber, record);
+  SpreadsheetApp.flush();
+  return { success: true, signToken: signToken };
+}
+
+function signRecordByToken(signToken) {
+  setupWorkbookSilently_();
+  signToken = String(signToken || '').trim().toUpperCase();
+  if (!signToken) throw new Error('Token requis.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('Aucun enregistrement.');
+
+  // Chercher la ligne avec ce token (colonne 33 = SignTokenAgent)
+  var data = sheet.getRange(2, 33, lastRow - 1, 1).getValues();
+  var foundRow = -1;
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0] || '').trim().toUpperCase() === signToken) {
+      foundRow = i + 2;
+      break;
+    }
+  }
+  if (foundRow < 0) throw new Error('Token de signature introuvable ou expiré.');
+
+  var record = getTrackingRecordByRow_(foundRow);
+  if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
+  if (record.statutSignatureAgent === APP.STATUS.SIGNED) throw new Error('Déjà signé.');
+  if (!record.sourceDocFileId) throw new Error('Document source introuvable.');
+
+  record.statutSignatureAgent = APP.STATUS.SIGNED;
+  record.dateSignatureAgent = new Date();
+  record.signeAgentPar = (record.agentPrenom || record.agentName) + ' (token)';
+  record.signTokenAgent = ''; // Invalider le token après usage
+
+  var doc = openDocumentWithRetry_(record.sourceDocFileId, 5);
+  renderSignatureBlocks_(doc, record);
+  doc.saveAndClose();
+
+  var folder = DriveApp.getFileById(record.sourceDocFileId).getParents().hasNext()
+    ? DriveApp.getFileById(record.sourceDocFileId).getParents().next()
+    : DriveApp.getFolderById(String(getParamsMap_()[APP.PARAM_KEYS.OUTPUT_FOLDER_ID] || ''));
+
+  var pdfName = buildPdfName_(record.agentPrenom || extractFirstName_(record.agentName), parseLocalDate_(record.dateSession));
+  if (record.pdfFileId) trashFileIfExists_(record.pdfFileId);
+  trashFilesByNameInFolder_(folder, pdfName);
+  var pdfFile = regeneratePdfFromSource_(record, folder, pdfName);
+
+  record.pdfFileId = pdfFile.getId();
+  record.pdfUrl = pdfFile.getUrl();
+  record.statutPdf = APP.STATUS.PDF_GENERATED;
+  record.majLe = new Date();
+
+  upsertTrackingRecord_(sheet, foundRow, record);
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    message: 'Signature enregistrée. Merci ' + (record.agentPrenom || record.agentName) + ' !',
+    agentName: record.agentName,
+    intituleSession: record.intituleSession
+  };
+}
+
 function validateSessionPassword_(userId, password) {
   const users = getUsers_();
   const user = users.find(u => u.userId === String(userId || '').trim() && u.active);
@@ -809,6 +897,10 @@ function renderIntervenantBlock_(doc, record) {
     if (record.statutSignatureIntervenant === APP.STATUS.SIGNED) {
       const inserted = insertSignatureImageInCell_(signatureCell, buildIntervenantSignatureImageModel_(record), true);
       if (inserted) appendSignatureCaption_(signatureCell, buildIntervenantSignatureCaption_(record), true);
+      // Ajouter le commentaire de l'intervenant sous la signature
+      if (record.commentaireIntervenant) {
+        appendSignatureComment_(signatureCell, record.commentaireIntervenant);
+      }
     }
     appendHiddenMarker_(signatureCell, APP.MARKERS.INTERVENANT);
   } else {
@@ -853,6 +945,20 @@ function appendSignatureCaption_(cell, textValue, centered) {
   text.setItalic(true);
   text.setFontSize(7);
   try { text.setForegroundColor('#444444'); } catch (e) {}
+  try { text.setFontFamily('Arial'); } catch (e) {}
+  return paragraph;
+}
+
+function appendSignatureComment_(cell, comment) {
+  var paragraph = cell.appendParagraph('Commentaire : ' + String(comment || '').trim());
+  paragraph.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
+  paragraph.setSpacingBefore(4);
+  paragraph.setSpacingAfter(2);
+  var text = paragraph.editAsText();
+  text.setBold(false);
+  text.setItalic(true);
+  text.setFontSize(8);
+  try { text.setForegroundColor('#333366'); } catch (e) {}
   try { text.setFontFamily('Arial'); } catch (e) {}
   return paragraph;
 }
@@ -1173,7 +1279,9 @@ function initializeWorkbook_() {
     'SigneAgentPar',
     'DateGeneration',
     'GenerePar',
-    'MajLe'
+    'MajLe',
+    'CommentaireIntervenant',
+    'SignTokenAgent'
   ]);
 
   // ── Quiz sheets ──
@@ -1305,7 +1413,7 @@ function getTrackingRecordByRow_(rowNumber) {
 }
 
 function mapTrackingRow_(row, rowNumber) {
-  while (row.length < 31) row.push('');
+  while (row.length < 33) row.push('');
   return {
     rowNumber: rowNumber,
     recordId: row[0],
@@ -1338,7 +1446,9 @@ function mapTrackingRow_(row, rowNumber) {
     signeAgentPar: row[27],
     dateGeneration: row[28],
     generePar: row[29],
-    majLe: row[30]
+    majLe: row[30],
+    commentaireIntervenant: String(row[31] || ''),
+    signTokenAgent: String(row[32] || '')
   };
 }
 
@@ -1393,7 +1503,9 @@ function upsertTrackingRecord_(sheet, rowNumber, record) {
     record.signeAgentPar,
     record.dateGeneration,
     record.generePar,
-    record.majLe
+    record.majLe,
+    record.commentaireIntervenant || '',
+    record.signTokenAgent || ''
   ]];
 
   if (rowNumber) {
@@ -1515,6 +1627,22 @@ function formatDateFr_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy');
 }
 
+function formatDateTimeFr_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  }
+  var str = String(value).trim();
+  // Si c'est déjà au format dd/MM/yyyy, on retourne tel quel
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) return str;
+  // Si c'est un ISO date
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    try { return Utilities.formatDate(new Date(str), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'); }
+    catch (e) { return str; }
+  }
+  return str;
+}
+
 function periodFromDate_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
 }
@@ -1617,7 +1745,7 @@ function getQuizModeles_() {
       questionsJson: String(row[3] || '[]'),
       actif: !/^non|false|0$/i.test(String(row[4] || 'OUI').trim()),
       creePar: String(row[5] || '').trim(),
-      creeLe: row[6] ? String(row[6]) : ''
+      creeLe: row[6] ? formatDateTimeFr_(row[6]) : ''
     };
   }).filter(function(m) { return m.modeleId; });
 }
@@ -1638,7 +1766,7 @@ function getQuizSessions_() {
       duree: String(row[6] || '').trim(),
       actif: !/^non|false|0$/i.test(String(row[7] || 'OUI').trim()),
       creePar: String(row[8] || '').trim(),
-      creeLe: row[9] ? String(row[9]) : ''
+      creeLe: row[9] ? formatDateTimeFr_(row[9]) : ''
     };
   }).filter(function(s) { return s.sessionId; });
 }
@@ -1661,11 +1789,11 @@ function getQuizReponses_() {
       score: row[8] !== undefined && row[8] !== '' ? Number(row[8]) : null,
       noteMax: row[9] !== undefined && row[9] !== '' ? Number(row[9]) : null,
       corrigePar: String(row[10] || '').trim(),
-      corrigeLe: row[11] ? String(row[11]) : '',
+      corrigeLe: row[11] ? formatDateTimeFr_(row[11]) : '',
       pdfFileId: String(row[12] || '').trim(),
       pdfUrl: String(row[13] || '').trim(),
       trackingRowNumber: row[14] ? Number(row[14]) : null,
-      soumisLe: row[15] ? String(row[15]) : ''
+      soumisLe: row[15] ? formatDateTimeFr_(row[15]) : ''
     };
   }).filter(function(r) { return r.reponseId; });
 }
@@ -1994,125 +2122,157 @@ function generateQuizPdf(token, reponseId) {
   var outputFolderId = String(params[APP.PARAM_KEYS.OUTPUT_FOLDER_ID] || '').trim();
   if (!outputFolderId) throw new Error('Dossier de sortie non configuré.');
 
+  var quizTemplateId = String(params[APP.PARAM_KEYS.QUIZ_TEMPLATE_ID] || '').trim();
+
   var answers = [];
   try { answers = JSON.parse(reponse.reponsesJson); } catch (e) { answers = []; }
 
-  // Créer le document Google Docs
   var participantLabel = reponse.prenom
     ? (reponse.prenom + ' ' + reponse.nom).trim()
     : reponse.nom || reponse.matricule;
   var docTitle = 'Quiz - ' + sanitizeFileName_(quizSession.titre) + ' - ' + sanitizeFileName_(participantLabel);
 
-  var doc = DocumentApp.create(docTitle);
-  var body = doc.getBody();
-  body.clear();
-  body.setMarginTop(36).setMarginBottom(36).setMarginLeft(54).setMarginRight(54);
+  var outputFolder = DriveApp.getFolderById(outputFolderId);
+  var quizFolder = getOrCreateSubFolder_(outputFolder, 'Quiz');
+  var doc, body;
 
-  // ── En-tête ──
-  var headerTable = body.appendTable([
-    ['QUIZ - ÉVALUATION', quizSession.titre]
-  ]);
-  headerTable.setBorderWidth(0);
-  var hRow = headerTable.getRow(0);
-  hRow.getCell(0).editAsText().setBold(true).setFontSize(14).setForegroundColor('#1a1a2e');
-  hRow.getCell(1).editAsText().setBold(true).setFontSize(12).setForegroundColor('#333333');
-  hRow.setMinimumHeight(36);
+  // Construire le contenu des questions formaté pour le template
+  var questionsContent = buildQuizQuestionsContent_(answers);
+  var scoreText = (reponse.score !== '' && reponse.score !== null ? reponse.score : '?') + ' / ' + (reponse.noteMax || '?');
+  var dateSessionFr = quizSession.dateSession ? formatMaybeDateFr_(quizSession.dateSession) : '-';
 
-  body.appendParagraph('').setSpacingAfter(4);
-
-  // ── Infos session ──
-  var infoTable = body.appendTable([
-    ['Date :', quizSession.dateSession || '-', 'Lieu :', quizSession.lieu || '-'],
-    ['Durée :', quizSession.duree || '-', 'Participant :', participantLabel]
-  ]);
-  infoTable.setBorderWidth(1).setBorderColor('#cccccc');
-  for (var ir = 0; ir < 2; ir++) {
-    for (var ic = 0; ic < 4; ic++) {
-      var cell = infoTable.getRow(ir).getCell(ic);
-      cell.editAsText().setFontSize(9);
-      if (ic % 2 === 0) { cell.setBackgroundColor('#f0f0f8'); cell.editAsText().setBold(true); }
+  if (quizTemplateId) {
+    // ── Mode template : copie le modèle et remplace les placeholders ──
+    var templateFile = DriveApp.getFileById(quizTemplateId);
+    if (templateFile.getMimeType() !== MimeType.GOOGLE_DOCS) {
+      throw new Error("Le modèle Quiz doit être un Google Docs natif.");
     }
+    var docCopy = templateFile.makeCopy(docTitle, quizFolder);
+    doc = openDocumentWithRetry_(docCopy.getId(), 5);
+    body = doc.getBody();
+
+    replaceTextSafely_(body, '{{QUIZ_TITRE}}', quizSession.titre || '');
+    replaceTextSafely_(body, '{{QUIZ_DATE}}', dateSessionFr);
+    replaceTextSafely_(body, '{{QUIZ_LIEU}}', quizSession.lieu || '-');
+    replaceTextSafely_(body, '{{QUIZ_DUREE}}', quizSession.duree || '-');
+    replaceTextSafely_(body, '{{PARTICIPANT_NOM}}', participantLabel);
+    replaceTextSafely_(body, '{{PARTICIPANT_MATRICULE}}', reponse.matricule || '-');
+    replaceTextSafely_(body, '{{PARTICIPANT_GROUPE}}', reponse.groupe || '-');
+    replaceTextSafely_(body, '{{QUIZ_SCORE}}', scoreText);
+    replaceTextSafely_(body, '{{QUIZ_QUESTIONS}}', questionsContent);
+    replaceTextSafely_(body, '{{DATE_GENERATION}}', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
+
+    // Préparer les ancres de signature si présentes dans le template
+    prepareAgentSignatureAnchor_(doc);
+
+  } else {
+    // ── Mode sans template : génération programmatique ──
+    doc = DocumentApp.create(docTitle);
+    body = doc.getBody();
+    body.clear();
+    body.setMarginTop(36).setMarginBottom(36).setMarginLeft(54).setMarginRight(54);
+
+    var headerTable = body.appendTable([['QUIZ - ÉVALUATION', quizSession.titre]]);
+    headerTable.setBorderWidth(0);
+    var hRow = headerTable.getRow(0);
+    hRow.getCell(0).editAsText().setBold(true).setFontSize(14).setForegroundColor('#1a1a2e');
+    hRow.getCell(1).editAsText().setBold(true).setFontSize(12).setForegroundColor('#333333');
+    hRow.setMinimumHeight(36);
+    body.appendParagraph('').setSpacingAfter(4);
+
+    var infoTable = body.appendTable([
+      ['Date :', dateSessionFr, 'Lieu :', quizSession.lieu || '-'],
+      ['Durée :', quizSession.duree || '-', 'Participant :', participantLabel]
+    ]);
+    infoTable.setBorderWidth(1).setBorderColor('#cccccc');
+    for (var ir = 0; ir < 2; ir++) {
+      for (var ic = 0; ic < 4; ic++) {
+        var cell = infoTable.getRow(ir).getCell(ic);
+        cell.editAsText().setFontSize(9);
+        if (ic % 2 === 0) { cell.setBackgroundColor('#f0f0f8'); cell.editAsText().setBold(true); }
+      }
+    }
+
+    if (reponse.matricule) {
+      var matRow = body.appendParagraph('Matricule : ' + reponse.matricule + (reponse.groupe ? '  |  Groupe : ' + reponse.groupe : ''));
+      matRow.editAsText().setFontSize(9).setForegroundColor('#555555');
+    }
+    body.appendParagraph('').setSpacingAfter(8);
+
+    var scorePara = body.appendParagraph('Score : ' + scoreText);
+    scorePara.editAsText().setBold(true).setFontSize(12).setForegroundColor('#1a1a2e');
+    scorePara.setSpacingAfter(10);
+
+    answers.forEach(function(a, idx) {
+      var qTitle = body.appendParagraph('Question ' + (idx + 1) + ' (' + (a.points || 1) + ' pt' + ((a.points || 1) > 1 ? 's' : '') + ') — ' + (a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre'));
+      qTitle.editAsText().setBold(true).setFontSize(10).setForegroundColor('#1a1a2e');
+      qTitle.setSpacingBefore(10).setSpacingAfter(3);
+
+      var qText = body.appendParagraph(String(a.question || ''));
+      qText.editAsText().setFontSize(10);
+      qText.setSpacingAfter(4);
+
+      var aPara = body.appendParagraph('Réponse : ' + String(a.userAnswer || '(aucune)'));
+      aPara.editAsText().setFontSize(10);
+
+      if (a.type === 'qcm' || a.type === 'vrai_faux') {
+        body.appendParagraph('Bonne réponse : ' + String(a.correctAnswer || '-'))
+          .editAsText().setFontSize(9).setForegroundColor('#555555');
+        body.appendParagraph(a.correct ? '✓ Correct' : '✗ Incorrect')
+          .editAsText().setBold(true).setFontSize(10)
+          .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+      } else if (a.correct !== null && a.correct !== undefined) {
+        body.appendParagraph(a.correct ? '✓ Validé' : '✗ Non validé')
+          .editAsText().setBold(true).setFontSize(10)
+          .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+      }
+
+      if (idx < answers.length - 1) {
+        body.appendParagraph('─────────────────────────────')
+          .editAsText().setFontSize(6).setForegroundColor('#cccccc');
+      }
+    });
+
+    body.appendParagraph('').setSpacingAfter(12);
+    body.appendParagraph('Document généré le ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+      .editAsText().setFontSize(8).setForegroundColor('#999999').setItalic(true);
+
+    // Déplacer dans le bon dossier
+    var tmpFile = DriveApp.getFileById(doc.getId());
+    quizFolder.addFile(tmpFile);
+    DriveApp.getRootFolder().removeFile(tmpFile);
   }
-
-  if (reponse.matricule) {
-    var matRow = body.appendParagraph('Matricule : ' + reponse.matricule + (reponse.groupe ? '  |  Groupe : ' + reponse.groupe : ''));
-    matRow.editAsText().setFontSize(9).setForegroundColor('#555555');
-  }
-
-  body.appendParagraph('').setSpacingAfter(8);
-
-  // ── Score ──
-  var scoreText = 'Score : ' + (reponse.score !== '' && reponse.score !== null ? reponse.score : '?') + ' / ' + (reponse.noteMax || '?');
-  var scorePara = body.appendParagraph(scoreText);
-  scorePara.editAsText().setBold(true).setFontSize(12).setForegroundColor('#1a1a2e');
-  scorePara.setSpacingAfter(10);
-
-  // ── Questions & réponses ──
-  answers.forEach(function(a, idx) {
-    // Titre de la question
-    var qTitle = body.appendParagraph('Question ' + (idx + 1) + ' (' + (a.points || 1) + ' pt' + ((a.points || 1) > 1 ? 's' : '') + ') — ' + (a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre'));
-    qTitle.editAsText().setBold(true).setFontSize(10).setForegroundColor('#1a1a2e');
-    qTitle.setSpacingBefore(10).setSpacingAfter(3);
-
-    // Énoncé
-    var qText = body.appendParagraph(String(a.question || ''));
-    qText.editAsText().setFontSize(10);
-    qText.setSpacingAfter(4);
-
-    // Réponse donnée
-    var answerLabel = 'Réponse : ' + String(a.userAnswer || '(aucune)');
-    var aPara = body.appendParagraph(answerLabel);
-    aPara.editAsText().setFontSize(10);
-
-    // Correction pour QCM/V-F
-    if (a.type === 'qcm' || a.type === 'vrai_faux') {
-      var correctLabel = 'Bonne réponse : ' + String(a.correctAnswer || '-');
-      var cPara = body.appendParagraph(correctLabel);
-      cPara.editAsText().setFontSize(9).setForegroundColor('#555555');
-
-      var resultLabel = a.correct ? '✓ Correct' : '✗ Incorrect';
-      var rPara = body.appendParagraph(resultLabel);
-      rPara.editAsText().setBold(true).setFontSize(10)
-        .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
-    } else if (a.correct !== null && a.correct !== undefined) {
-      var mPara = body.appendParagraph(a.correct ? '✓ Validé' : '✗ Non validé');
-      mPara.editAsText().setBold(true).setFontSize(10)
-        .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
-    }
-
-    // Séparateur entre questions
-    if (idx < answers.length - 1) {
-      var sep = body.appendParagraph('─────────────────────────────');
-      sep.editAsText().setFontSize(6).setForegroundColor('#cccccc');
-      sep.setSpacingBefore(6).setSpacingAfter(6);
-    }
-  });
-
-  // ── Pied de page ──
-  body.appendParagraph('').setSpacingAfter(12);
-  var footer = body.appendParagraph('Document généré le ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
-  footer.editAsText().setFontSize(8).setForegroundColor('#999999').setItalic(true);
 
   doc.saveAndClose();
 
-  // Déplacer dans le dossier de sortie
-  var outputFolder = DriveApp.getFolderById(outputFolderId);
-  var quizFolder = getOrCreateSubFolder_(outputFolder, 'Quiz');
-  var file = DriveApp.getFileById(doc.getId());
-  quizFolder.addFile(file);
-  DriveApp.getRootFolder().removeFile(file);
-
   // Convertir en PDF
+  var docFileId = doc.getId();
   Utilities.sleep(1500);
-  var pdfBlob = file.getAs(MimeType.PDF).setName(docTitle + '.pdf');
+  var pdfBlob = DriveApp.getFileById(docFileId).getAs(MimeType.PDF).setName(docTitle + '.pdf');
   var pdfFile = quizFolder.createFile(pdfBlob);
 
-  // Mettre à jour la réponse avec le PDF
-  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
-  sheet.getRange(reponse.rowNumber, 13).setValue(pdfFile.getId());
-  sheet.getRange(reponse.rowNumber, 14).setValue(pdfFile.getUrl());
+  // Mettre à jour la réponse avec le PDF + sourceDocId
+  var repSheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.QUIZ_REPONSES);
+  repSheet.getRange(reponse.rowNumber, 13).setValue(pdfFile.getId());
+  repSheet.getRange(reponse.rowNumber, 14).setValue(pdfFile.getUrl());
 
-  return { success: true, pdfUrl: pdfFile.getUrl(), pdfFileId: pdfFile.getId() };
+  return { success: true, pdfUrl: pdfFile.getUrl(), pdfFileId: pdfFile.getId(), sourceDocFileId: docFileId };
+}
+
+function buildQuizQuestionsContent_(answers) {
+  return answers.map(function(a, idx) {
+    var parts = [];
+    var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
+    parts.push('Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) - ' + typeLabel + ' : ' + String(a.question || ''));
+    parts.push('  Réponse : ' + String(a.userAnswer || '(aucune)'));
+    if (a.type === 'qcm' || a.type === 'vrai_faux') {
+      parts.push('  Bonne réponse : ' + String(a.correctAnswer || '-'));
+      parts.push('  ' + (a.correct ? '✓ Correct' : '✗ Incorrect'));
+    } else if (a.correct !== null && a.correct !== undefined) {
+      parts.push('  ' + (a.correct ? '✓ Validé' : '✗ Non validé'));
+    }
+    return parts.join('\n');
+  }).join('\n\n');
 }
 
 // ── Rattachement quiz au module émargement/tracking ──
@@ -2178,7 +2338,9 @@ function linkQuizToTracking(token, reponseId) {
     signeAgentPar: '',
     dateGeneration: new Date(),
     generePar: session.name,
-    majLe: new Date()
+    majLe: new Date(),
+    commentaireIntervenant: '',
+    signTokenAgent: ''
   };
 
   upsertTrackingRecord_(trackingSheet, null, record);
