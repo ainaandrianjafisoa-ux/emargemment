@@ -1898,20 +1898,24 @@
         state.quizModeles = data.modeles || [];
         state.quizSessions = data.sessions || [];
         state.quizReponses = data.reponses || [];
-        renderQuizModeles();
-        renderQuizSessions();
-        renderQuizResults();
-        renderQuizSessionModeleSelect();
-        renderQuizResultsSessionFilter();
       } catch (err) {
-        console.warn('Quiz data load skipped:', err.message);
+        console.warn('Quiz data load error:', err.message);
+        state.quizModeles = [];
+        state.quizSessions = [];
+        state.quizReponses = [];
       }
+      renderQuizModeles();
+      renderQuizSessions();
+      renderQuizResults();
+      renderQuizSessionModeleSelect();
+      renderQuizResultsSessionFilter();
+      renderQuizImportSessionSelect();
     }
 
     function renderQuizSessionModeleSelect() {
       const sel = document.getElementById('quizSessionModele');
       sel.innerHTML = '<option value="">-- Choisir un modèle --</option>' +
-        state.quizModeles.filter(m => m.actif !== 'NON').map(m =>
+        state.quizModeles.filter(m => m.actif !== false).map(m =>
           `<option value="${escapeAttr(m.modeleId)}">${escapeHtml(m.titre)}</option>`
         ).join('');
     }
@@ -2121,7 +2125,7 @@
       if (!state.quizSessions.length) { el.innerHTML = '<p class="mini">Aucune session.</p>'; return; }
       el.innerHTML = state.quizSessions.map(s => {
         const modeleName = (state.quizModeles.find(m => m.modeleId === s.modeleId) || {}).titre || '?';
-        const isActive = s.actif !== 'NON';
+        const isActive = s.actif !== false;
         const reponseCount = state.quizReponses.filter(r => r.sessionId === s.sessionId).length;
         return `<div class="user-card">
           <div>
@@ -2157,7 +2161,7 @@
         else if (isGraded) statusPill = '<span class="pill pill-success">Corrigé</span>';
         else statusPill = '<span class="pill pill-muted">Soumis</span>';
         return `<tr>
-          <td>${escapeHtml(name)}${r.isExterne === 'OUI' ? ' <span class="pill pill-muted">Externe</span>' : ''}</td>
+          <td>${escapeHtml(name)}${r.isExterne ? ' <span class="pill pill-muted">Externe</span>' : ''}</td>
           <td>${escapeHtml(r.matricule)}</td>
           <td>${escapeHtml(r.groupe || '-')}</td>
           <td><strong>${r.score ?? '-'}</strong> / ${r.noteMax ?? '-'}</td>

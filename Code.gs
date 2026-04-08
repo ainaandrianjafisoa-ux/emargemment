@@ -1244,6 +1244,28 @@ function setupWorkbookSilently_() {
   rememberActiveSpreadsheet_();
   const ss = getAppSpreadsheet_();
   if (!ss.getSheetByName(APP.SHEETS.AGENTS)) initializeWorkbook_();
+  ensureQuizSheets_();
+}
+
+function ensureQuizSheets_() {
+  var ss = getAppSpreadsheet_();
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_MODELES)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_MODELES, [
+      'ModeleId', 'Titre', 'Description', 'QuestionsJson', 'Actif', 'CreePar', 'CreeLe'
+    ]);
+  }
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_SESSIONS)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_SESSIONS, [
+      'SessionId', 'Token', 'ModeleId', 'Titre', 'DateSession', 'Lieu', 'Duree', 'Actif', 'CreePar', 'CreeLe'
+    ]);
+  }
+  if (!ss.getSheetByName(APP.SHEETS.QUIZ_REPONSES)) {
+    ensureSheet_(ss, APP.SHEETS.QUIZ_REPONSES, [
+      'ReponseId', 'SessionId', 'Matricule', 'Nom', 'Prenom', 'Groupe',
+      'IsExterne', 'ReponsesJson', 'Score', 'NoteMax', 'CorrigePar', 'CorrigeLe',
+      'PdfFileId', 'PdfUrl', 'TrackingRowNumber', 'SoumisLe'
+    ]);
+  }
 }
 
 function upsertParam_(sheet, key, value) {
@@ -1785,6 +1807,7 @@ function quizSubmitAnswers(payload) {
 function getQuizBootstrapData(token) {
   var session = requireSession_(token);
   if (isAgent_(session)) throw new Error('Accès refusé.');
+  ensureQuizSheets_();
   return {
     modeles: getQuizModeles_(),
     sessions: getQuizSessions_(),
