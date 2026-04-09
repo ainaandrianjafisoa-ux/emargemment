@@ -2357,19 +2357,35 @@ function generateQuizPdf(token, reponseId) {
 
     // ── Bloc signature ──
     body.appendParagraph('').setSpacingAfter(20);
+    var sepLine2 = body.appendParagraph('────────────────────────────────────────');
+    sepLine2.editAsText().setFontSize(8).setForegroundColor('#cccccc');
+    sepLine2.setSpacingAfter(8);
+    var sigTitle2 = body.appendParagraph('SIGNATURES');
+    sigTitle2.editAsText().setBold(true).setFontSize(11).setForegroundColor('#1a1a2e');
+    sigTitle2.setSpacingAfter(8);
+
     var sigTable = body.appendTable([
       ['Intervenant / Formateur', 'Participant / Évalué'],
-      ['{{INTERVENANT}}', '{{SIGNATURE}}']
+      ['(espace signature)', '(espace signature)']
     ]);
-    sigTable.setBorderWidth(1).setBorderColor('#cccccc');
+    sigTable.setBorderWidth(1).setBorderColor('#999999');
     for (var sc = 0; sc < 2; sc++) {
-      sigTable.getRow(0).getCell(sc).editAsText().setBold(true).setFontSize(9);
-      sigTable.getRow(0).getCell(sc).setBackgroundColor('#f0f0f8');
-      sigTable.getRow(1).getCell(sc).editAsText().setFontSize(8).setForegroundColor('#999999');
-      sigTable.getRow(1).setMinimumHeight(60);
+      var hCell = sigTable.getRow(0).getCell(sc);
+      hCell.editAsText().setBold(true).setFontSize(9).setForegroundColor('#1a1a2e');
+      hCell.setBackgroundColor('#f0f0f8');
+      hCell.setPaddingTop(6).setPaddingBottom(6).setPaddingLeft(8).setPaddingRight(8);
+      var sCell = sigTable.getRow(1).getCell(sc);
+      sCell.editAsText().setFontSize(8).setForegroundColor('#aaaaaa').setItalic(true);
+      sCell.setPaddingTop(8).setPaddingBottom(8).setPaddingLeft(8).setPaddingRight(8);
+      sigTable.getRow(1).setMinimumHeight(72);
     }
 
-    body.appendParagraph('').setSpacingAfter(12);
+    // Ligne de dates (sera remplie par prepareQuizSignatures_)
+    body.appendParagraph('').setSpacingAfter(6);
+    body.appendParagraph('Date : ____/____/________                         Date : ____/____/________')
+      .editAsText().setFontSize(8).setForegroundColor('#666666');
+
+    body.appendParagraph('').setSpacingAfter(8);
     body.appendParagraph('Document généré le ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
       .editAsText().setFontSize(8).setForegroundColor('#999999').setItalic(true);
 
@@ -2379,9 +2395,8 @@ function generateQuizPdf(token, reponseId) {
     DriveApp.getRootFolder().removeFile(tmpFile);
   }
 
-  // Préparer les ancres de signature (commun aux deux modes)
-  prepareIntervenantLayout_(doc, session.userId);
-  prepareAgentSignatureAnchor_(doc);
+  // Préparer les ancres de signature quiz (intervenant + participant dans les bonnes cellules)
+  prepareQuizSignatures_(doc, session.userId, participantLabel, dateSessionFr);
 
   doc.saveAndClose();
 
@@ -2533,10 +2548,76 @@ function appendSignatureTableIfMissing_(body) {
     sigTable.getRow(1).setMinimumHeight(72);
   }
 
-  // Date de signature
+  // Dates de signature — remplies avec la date de session
   body.appendParagraph('').setSpacingAfter(6);
   body.appendParagraph('Date : ____/____/________                         Date : ____/____/________')
     .editAsText().setFontSize(8).setForegroundColor('#666666');
+}
+
+/**
+ * Prépare les signatures pour un PDF quiz :
+ * - Cell 0 (Intervenant/Formateur) : login userId + marker INTERVENANT
+ * - Cell 1 (Participant/Évalué)    : "Vu et visé par [nom]" + marker AGENT
+ * - Dates en dessous remplies avec la date de session
+ */
+function prepareQuizSignatures_(doc, userId, participantName, dateSessionFr) {
+  var body = doc.getBody();
+
+  // Trouver le tableau de signature quiz
+  var sigTable = null;
+  var tables = body.getTables();
+  for (var t = tables.length - 1; t >= 0; t--) {
+    var table = tables[t];
+    if (table.getNumRows() < 2) continue;
+    var row0 = table.getRow(0);
+    if (row0.getNumCells() < 2) continue;
+    var h0 = String(row0.getCell(0).getText() || '').toLowerCase();
+    var h1 = String(row0.getCell(1).getText() || '').toLowerCase();
+    if ((h0.indexOf('intervenant') !== -1 || h0.indexOf('formateur') !== -1) &&
+        (h1.indexOf('participant') !== -1 || h1.indexOf('valu') !== -1)) {
+      sigTable = table;
+      break;
+    }
+  }
+  if (!sigTable) return;
+
+  var sigRow = sigTable.getRow(1);
+
+  // ── Cell 0 : Intervenant / Formateur ──
+  var cellInter = sigRow.getCell(0);
+  clearTableCell_(cellInter);
+  // Login ID en haut
+  var pId = cellInter.appendParagraph(String(userId || '').trim());
+  pId.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  pId.editAsText().setFontSize(8).setBold(false).setItalic(false);
+  // Marker invisible pour la signature intervenant
+  appendHiddenMarker_(cellInter, APP.MARKERS.INTERVENANT);
+
+  // ── Cell 1 : Participant / Évalué ──
+  var cellPart = sigRow.getCell(1);
+  clearTableCell_(cellPart);
+  // "Vu et visé par [nom]"
+  var mention = 'Vu et visé par ' + (participantName || 'l\'évalué');
+  var pVise = cellPart.appendParagraph(mention);
+  pVise.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  pVise.editAsText().setFontSize(8).setBold(false).setItalic(true).setForegroundColor('#333333');
+  // Marker invisible pour la signature participant (agent)
+  appendHiddenMarker_(cellPart, APP.MARKERS.AGENT);
+
+  // ── Remplir les dates en dessous du tableau ──
+  var tableIndex = body.getChildIndex(sigTable);
+  var numChildren = body.getNumChildren();
+  for (var i = tableIndex + 1; i < numChildren && i < tableIndex + 4; i++) {
+    var child = body.getChild(i);
+    if (child.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
+    var txt = String(child.asParagraph().getText() || '');
+    if (txt.indexOf('Date') !== -1 && txt.indexOf('____') !== -1) {
+      var dateStr = dateSessionFr || '____/____/________';
+      child.asParagraph().setText('Date : ' + dateStr + '                         Date : ' + dateStr);
+      child.asParagraph().editAsText().setFontSize(8).setForegroundColor('#333333');
+      break;
+    }
+  }
 }
 
 // ── Rattachement quiz au module émargement/tracking ──
