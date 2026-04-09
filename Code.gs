@@ -2274,8 +2274,13 @@ function generateQuizPdf(token, reponseId) {
     replaceTextSafely_(body, '{{PARTICIPANT_MATRICULE}}', reponse.matricule || '-');
     replaceTextSafely_(body, '{{PARTICIPANT_GROUPE}}', reponse.groupe || '-');
     replaceTextSafely_(body, '{{QUIZ_SCORE}}', scoreText);
-    replaceTextSafely_(body, '{{QUIZ_QUESTIONS}}', questionsContent);
     replaceTextSafely_(body, '{{DATE_GENERATION}}', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
+
+    // Remplacer {{QUIZ_QUESTIONS}} par du contenu formaté (questions en italique)
+    replaceQuizQuestionsFormatted_(body, answers);
+
+    // Si pas de placeholders {{INTERVENANT}}/{{SIGNATURE}}, ajouter le bloc signature
+    appendSignatureTableIfMissing_(body);
 
   } else {
     // ── Mode sans template : génération programmatique ──
@@ -2411,6 +2416,112 @@ function buildQuizQuestionsContent_(answers) {
     }
     return parts.join('\n');
   }).join('\n\n─────────────────────────────\n\n');
+}
+
+/**
+ * Remplace {{QUIZ_QUESTIONS}} par du contenu riche formaté :
+ * - Titre question + énoncé en gras italique
+ * - Réponses en normal
+ */
+function replaceQuizQuestionsFormatted_(body, answers) {
+  var found = body.findText('\\{\\{QUIZ_QUESTIONS\\}\\}');
+  if (!found) return;
+
+  // Trouver le paragraphe contenant le placeholder
+  var element = found.getElement();
+  var parent = element.getParent();
+  var parentIndex = body.getChildIndex(parent);
+
+  // Supprimer le paragraphe placeholder
+  body.removeChild(parent);
+
+  // Insérer les questions formatées à la même position
+  var insertIdx = parentIndex;
+
+  answers.forEach(function(a, idx) {
+    var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
+
+    // Titre question : gras + italique
+    var qTitle = body.insertParagraph(insertIdx++, 'Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) — ' + typeLabel);
+    qTitle.editAsText().setBold(true).setItalic(true).setFontSize(10).setForegroundColor('#1a1a2e');
+    qTitle.setSpacingBefore(10).setSpacingAfter(2);
+
+    // Énoncé : italique
+    var qText = body.insertParagraph(insertIdx++, String(a.question || ''));
+    qText.editAsText().setItalic(true).setBold(false).setFontSize(10);
+    qText.setSpacingAfter(4);
+
+    // Réponse : normal
+    var aPara = body.insertParagraph(insertIdx++, 'Réponse : ' + String(a.userAnswer || '(aucune)'));
+    aPara.editAsText().setFontSize(10).setBold(false).setItalic(false);
+
+    // Correction pour QCM/V-F
+    if (a.type === 'qcm' || a.type === 'vrai_faux') {
+      var bonne = body.insertParagraph(insertIdx++, 'Bonne réponse : ' + String(a.correctAnswer || '-'));
+      bonne.editAsText().setFontSize(9).setForegroundColor('#555555').setBold(false).setItalic(false);
+      var verdict = body.insertParagraph(insertIdx++, a.correct ? '✓ Correct' : '✗ Incorrect');
+      verdict.editAsText().setBold(true).setItalic(false).setFontSize(10)
+        .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+    } else if (a.correct !== null && a.correct !== undefined) {
+      var verdict2 = body.insertParagraph(insertIdx++, a.correct ? '✓ Validé' : '✗ Non validé');
+      verdict2.editAsText().setBold(true).setItalic(false).setFontSize(10)
+        .setForegroundColor(a.correct ? '#2d7a3a' : '#b5544e');
+    }
+
+    // Séparateur entre questions
+    if (idx < answers.length - 1) {
+      var sep = body.insertParagraph(insertIdx++, '─────────────────────────────');
+      sep.editAsText().setFontSize(6).setForegroundColor('#cccccc');
+    }
+  });
+}
+
+/**
+ * Ajoute un tableau de signature en bas du document si aucun placeholder
+ * {{INTERVENANT}} ou {{SIGNATURE}} n'est trouvé dans le template.
+ */
+function appendSignatureTableIfMissing_(body) {
+  var hasIntervenant = body.findText('\\{\\{INTERVENANT\\}\\}');
+  var hasSignature = body.findText('\\{\\{SIGNATURE\\}\\}');
+  if (hasIntervenant || hasSignature) return; // Les placeholders existent, pas besoin d'ajouter
+
+  // Espacement avant le bloc signature
+  body.appendParagraph('').setSpacingAfter(24);
+
+  // Ligne de séparation
+  var sepLine = body.appendParagraph('────────────────────────────────────────');
+  sepLine.editAsText().setFontSize(8).setForegroundColor('#cccccc');
+  sepLine.setSpacingAfter(8);
+
+  // Titre du bloc signature
+  var sigTitle = body.appendParagraph('SIGNATURES');
+  sigTitle.editAsText().setBold(true).setFontSize(11).setForegroundColor('#1a1a2e');
+  sigTitle.setSpacingAfter(8);
+
+  // Tableau signature 2 colonnes avec style
+  var sigTable = body.appendTable([
+    ['Intervenant / Formateur', 'Participant / Évalué'],
+    ['{{INTERVENANT}}', '{{SIGNATURE}}']
+  ]);
+  sigTable.setBorderWidth(1).setBorderColor('#999999');
+
+  // Style en-têtes
+  for (var sc = 0; sc < 2; sc++) {
+    var headerCell = sigTable.getRow(0).getCell(sc);
+    headerCell.editAsText().setBold(true).setFontSize(9).setForegroundColor('#1a1a2e');
+    headerCell.setBackgroundColor('#f0f0f8');
+    headerCell.setPaddingTop(6).setPaddingBottom(6).setPaddingLeft(8).setPaddingRight(8);
+
+    var sigCell = sigTable.getRow(1).getCell(sc);
+    sigCell.editAsText().setFontSize(8).setForegroundColor('#aaaaaa').setItalic(true);
+    sigCell.setPaddingTop(8).setPaddingBottom(8).setPaddingLeft(8).setPaddingRight(8);
+    sigTable.getRow(1).setMinimumHeight(72);
+  }
+
+  // Date de signature
+  body.appendParagraph('').setSpacingAfter(6);
+  body.appendParagraph('Date : ____/____/________                         Date : ____/____/________')
+    .editAsText().setFontSize(8).setForegroundColor('#666666');
 }
 
 // ── Rattachement quiz au module émargement/tracking ──
