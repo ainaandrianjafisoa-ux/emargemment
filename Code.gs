@@ -349,7 +349,47 @@ function getDashboard(token, period) {
     signatureAgentAt: formatMaybeDateTimeFr_(rec.dateSignatureAgent)
   }));
 
-  return { period: cleanPeriod, rows };
+  // ── KPIs quiz pour le dashboard ──
+  var quizKpis = { sessions: 0, reponses: 0, graded: 0, avgScore: null, passRate: null, pdfGenerated: 0 };
+  try {
+    ensureQuizSheets_();
+    var allSessions = getQuizSessions_();
+    var periodSessions = allSessions.filter(function(s) { return s.dateSession && s.dateSession.slice(0, 7) === cleanPeriod; });
+    quizKpis.sessions = periodSessions.length;
+    if (periodSessions.length > 0) {
+      var sessionIds = periodSessions.map(function(s) { return s.sessionId; });
+      var allReponses = getQuizReponses_();
+      var periodReponses = allReponses.filter(function(r) { return sessionIds.indexOf(r.sessionId) !== -1; });
+      quizKpis.reponses = periodReponses.length;
+      var graded = periodReponses.filter(function(r) { return r.score !== null && r.noteMax !== null && r.noteMax > 0; });
+      quizKpis.graded = graded.length;
+      quizKpis.pdfGenerated = periodReponses.filter(function(r) { return r.pdfFileId; }).length;
+      if (graded.length > 0) {
+        var totalPct = graded.reduce(function(sum, r) { return sum + (r.score / r.noteMax) * 100; }, 0);
+        quizKpis.avgScore = Math.round(totalPct / graded.length);
+        quizKpis.passRate = Math.round(graded.filter(function(r) { return (r.score / r.noteMax) >= 0.5; }).length / graded.length * 100);
+      }
+    }
+  } catch (e) {
+    console.error('getDashboard quiz KPIs', e);
+  }
+
+  // ── KPIs par sous-équipe ──
+  var teamMap = {};
+  rows.forEach(function(r) {
+    var team = r.sousEquipe || 'Non assigné';
+    if (!teamMap[team]) teamMap[team] = { total: 0, pdfOk: 0, signInterOk: 0, signAgentOk: 0 };
+    teamMap[team].total++;
+    if (r.statutPdf === 'Généré') teamMap[team].pdfOk++;
+    if (r.statutSignatureIntervenant === 'Signé') teamMap[team].signInterOk++;
+    if (r.statutSignatureAgent === 'Signé') teamMap[team].signAgentOk++;
+  });
+  var teamKpis = Object.keys(teamMap).map(function(name) {
+    var t = teamMap[name];
+    return { name: name, total: t.total, pdfOk: t.pdfOk, signInterOk: t.signInterOk, signAgentOk: t.signAgentOk };
+  });
+
+  return { period: cleanPeriod, rows: rows, quizKpis: quizKpis, teamKpis: teamKpis };
 }
 
 function getSignatureQueue(token, period) {
@@ -747,6 +787,44 @@ function bulkSignRecords(token, payload) {
 
   SpreadsheetApp.flush();
   return { success: true, updatedCount: updated.length, skipped: skipped, updated: updated };
+}
+
+// ── Régénération PDF depuis le document source ──
+
+function regenerateTrackingPdf(token, rowNumber) {
+  var session = requireSession_(token);
+  if (isAgent_(session)) throw new Error('Accès refusé.');
+
+  rowNumber = Number(rowNumber || 0);
+  if (!rowNumber || rowNumber < 2) throw new Error('Ligne invalide.');
+
+  var sheet = getAppSpreadsheet_().getSheetByName(APP.SHEETS.TRACKING);
+  var record = getTrackingRecordByRow_(rowNumber);
+  if (!record || !record.recordId) throw new Error('Enregistrement introuvable.');
+  if (!record.sourceDocFileId) throw new Error('Document source introuvable. Régénérez le PDF depuis l\'onglet Quiz ou Génération.');
+
+  var doc = openDocumentWithRetry_(record.sourceDocFileId, 5);
+  renderSignatureBlocks_(doc, record);
+  doc.saveAndClose();
+
+  var folder = DriveApp.getFileById(record.sourceDocFileId).getParents().hasNext()
+    ? DriveApp.getFileById(record.sourceDocFileId).getParents().next()
+    : DriveApp.getFolderById(String(getParamsMap_()[APP.PARAM_KEYS.OUTPUT_FOLDER_ID] || ''));
+
+  var pdfName = buildPdfName_(record.agentPrenom || extractFirstName_(record.agentName), parseLocalDate_(record.dateSession));
+  if (record.pdfFileId) trashFileIfExists_(record.pdfFileId);
+  trashFilesByNameInFolder_(folder, pdfName);
+  var pdfFile = regeneratePdfFromSource_(record, folder, pdfName);
+
+  record.pdfFileId = pdfFile.getId();
+  record.pdfUrl = pdfFile.getUrl();
+  record.statutPdf = APP.STATUS.PDF_GENERATED;
+  record.majLe = new Date();
+
+  upsertTrackingRecord_(sheet, rowNumber, record);
+  SpreadsheetApp.flush();
+
+  return { success: true, pdfUrl: pdfFile.getUrl() };
 }
 
 // ── Token de signature agent (stagiaire / externe) ──

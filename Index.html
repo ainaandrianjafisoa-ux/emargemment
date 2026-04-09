@@ -134,8 +134,35 @@
     .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
     .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
     .stats { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:12px; }
+    .stats-6 { grid-template-columns: repeat(6, minmax(0,1fr)); }
     .stat { padding:16px; border-radius:20px; border:1px solid var(--line); background: var(--surface-2); }
     .value { font-size:28px; font-weight:800; }
+    .value-sm { font-size:20px; font-weight:700; }
+    .stat-accent { border-left:4px solid #c9a227; }
+    .stat-green { border-left:4px solid #4ade80; }
+    .stat-red { border-left:4px solid #d96a63; }
+    .stat-blue { border-left:4px solid #60a5fa; }
+    /* Progress bars */
+    .progress-bar { background: var(--line); border-radius:8px; height:10px; overflow:hidden; margin-top:6px; }
+    .progress-fill { height:100%; border-radius:8px; transition: width .4s ease; }
+    .progress-green { background: #4ade80; }
+    .progress-amber { background: #facc15; }
+    .progress-red { background: #d96a63; }
+    .progress-blue { background: #60a5fa; }
+    /* Donut chart */
+    .donut-wrap { display:flex; align-items:center; gap:14px; }
+    .donut-svg { width:90px; height:90px; }
+    .donut-legend { display:flex; flex-direction:column; gap:4px; }
+    .donut-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; }
+    .donut-legend-color { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    /* Bar chart */
+    .bar-chart { display:flex; align-items:flex-end; gap:6px; height:120px; padding-top:8px; }
+    .bar-col { display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; }
+    .bar-fill { width:100%; min-width:18px; border-radius:6px 6px 0 0; transition: height .4s ease; }
+    .bar-label { font-size:10px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px; }
+    .bar-value { font-size:11px; font-weight:700; }
+    .kpi-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-top:16px; }
+    @media(max-width:900px) { .kpi-grid { grid-template-columns: 1fr; } .stats-6 { grid-template-columns: repeat(3,1fr); } }
     .section-title { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
     .agent-list, .users-list {
       max-height:420px; overflow:auto; border-radius:18px; border:1px solid var(--line); background: var(--surface-2); padding:10px;
@@ -494,6 +521,12 @@
         </div>
 
         <div id="dashboardStats" class="stats" style="margin-bottom:16px;"></div>
+
+        <!-- KPI Charts Section -->
+        <div class="kpi-grid" id="dashboardKpiGrid" style="margin-bottom:18px;"></div>
+
+        <!-- Team Performance Bar Chart -->
+        <div id="dashboardTeamChart" style="margin-bottom:18px;"></div>
 
         <div class="table-wrap">
           <table>
@@ -1325,6 +1358,8 @@
       try {
         const data = await rpc('getDashboard', state.token, period);
         state.dashboardRows = data.rows || [];
+        state.quizKpis = data.quizKpis || {};
+        state.teamKpis = data.teamKpis || [];
         renderDashboard();
       } catch (err) {
         showToast('❌ ' + err.message, 'error');
@@ -1333,17 +1368,149 @@
       }
     }
 
+    /* ── SVG donut helper ── */
+    function renderDonut(segments, size) {
+      size = size || 90;
+      const r = 32, cx = 45, cy = 45, circ = 2 * Math.PI * r;
+      let offset = 0;
+      const paths = segments.map(s => {
+        const dash = circ * (s.pct / 100);
+        const gap = circ - dash;
+        const path = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="12" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${-offset}" stroke-linecap="round"/>`;
+        offset += dash;
+        return path;
+      });
+      const legendItems = segments.map(s => `<div class="donut-legend-item"><span class="donut-legend-color" style="background:${s.color}"></span>${s.label} (${s.pct}%)</div>`).join('');
+      return `<div class="donut-wrap">
+        <svg class="donut-svg" viewBox="0 0 90 90">${paths.join('')}</svg>
+        <div class="donut-legend">${legendItems}</div>
+      </div>`;
+    }
+
+    /* ── Progress bar helper ── */
+    function renderProgress(pct, colorClass) {
+      const clamped = Math.max(0, Math.min(100, pct || 0));
+      return `<div class="progress-bar"><div class="progress-fill ${colorClass}" style="width:${clamped}%"></div></div>`;
+    }
+
+    /* ── Bar chart helper ── */
+    function renderBarChart(items, maxVal, colorFn) {
+      if (!items.length) return '<div class="mini" style="text-align:center;padding:12px;">Aucune donnée</div>';
+      const mx = maxVal || Math.max(...items.map(i => i.value), 1);
+      return `<div class="bar-chart">${items.map(item => {
+        const h = Math.max(4, (item.value / mx) * 100);
+        const color = colorFn ? colorFn(item) : 'var(--gold)';
+        return `<div class="bar-col"><div class="bar-value">${item.value}</div><div class="bar-fill" style="height:${h}%;background:${color}"></div><div class="bar-label" title="${escapeAttr(item.label)}">${escapeHtml(item.label)}</div></div>`;
+      }).join('')}</div>`;
+    }
+
     function renderDashboard() {
       const rows = state.dashboardRows || [];
+      const total = rows.length;
       const pdfGenerated = rows.filter(r => r.statutPdf === 'Généré').length;
       const signedInter = rows.filter(r => r.statutSignatureIntervenant === 'Signé').length;
       const signedAgent = rows.filter(r => r.statutSignatureAgent === 'Signé').length;
+      const fullyDone = rows.filter(r => r.statutPdf === 'Généré' && r.statutSignatureIntervenant === 'Signé' && r.statutSignatureAgent === 'Signé').length;
+      const pctPdf = total ? Math.round(pdfGenerated / total * 100) : 0;
+      const pctInter = total ? Math.round(signedInter / total * 100) : 0;
+      const pctAgent = total ? Math.round(signedAgent / total * 100) : 0;
+      const pctDone = total ? Math.round(fullyDone / total * 100) : 0;
+
+      /* ── Top stats with progress bars ── */
       document.getElementById('dashboardStats').innerHTML = `
-        <div class="stat"><div class="mini">Agents</div><div class="value">${rows.length}</div></div>
-        <div class="stat"><div class="mini">PDF générés</div><div class="value">${pdfGenerated}</div></div>
-        <div class="stat"><div class="mini">Signatures intervenant</div><div class="value">${signedInter}</div></div>
-        <div class="stat"><div class="mini">Signatures agent</div><div class="value">${signedAgent}</div></div>
+        <div class="stat stat-accent"><div class="mini">Agents</div><div class="value">${total}</div></div>
+        <div class="stat stat-green"><div class="mini">PDF générés</div><div class="value">${pdfGenerated}<small style="font-size:14px;font-weight:400;color:var(--muted)"> / ${total}</small></div>${renderProgress(pctPdf, 'progress-green')}</div>
+        <div class="stat stat-blue"><div class="mini">Sign. intervenant</div><div class="value">${signedInter}<small style="font-size:14px;font-weight:400;color:var(--muted)"> / ${total}</small></div>${renderProgress(pctInter, 'progress-blue')}</div>
+        <div class="stat stat-blue"><div class="mini">Sign. agent</div><div class="value">${signedAgent}<small style="font-size:14px;font-weight:400;color:var(--muted)"> / ${total}</small></div>${renderProgress(pctAgent, 'progress-blue')}</div>
       `;
+
+      /* ── KPI grid: signature donut + quiz performance + completion ── */
+      const qk = state.quizKpis || {};
+      const kpiHtml = [];
+
+      // Card 1: Signature completion donut
+      const pctNone = total ? Math.max(0, 100 - pctPdf) : 100;
+      const sigSegments = [
+        { pct: pctDone, color: '#4ade80', label: 'Complet' },
+        { pct: total ? Math.round((pdfGenerated - fullyDone) / total * 100) : 0, color: '#facc15', label: 'Partiel' },
+        { pct: pctNone, color: '#d96a63', label: 'Non traité' }
+      ];
+      kpiHtml.push(`<div class="card glass-card">
+        <div class="mini" style="margin-bottom:8px;font-weight:700;">Complétude globale</div>
+        ${renderDonut(sigSegments)}
+        <div style="margin-top:8px;font-size:13px;color:var(--muted);">${fullyDone} / ${total} dossiers complets (${pctDone}%)</div>
+      </div>`);
+
+      // Card 2: Quiz performance
+      kpiHtml.push(`<div class="card glass-card">
+        <div class="mini" style="margin-bottom:8px;font-weight:700;">Performance Quiz</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="stat" style="padding:10px;"><div class="mini">Sessions</div><div class="value-sm">${qk.sessions || 0}</div></div>
+          <div class="stat" style="padding:10px;"><div class="mini">Réponses</div><div class="value-sm">${qk.reponses || 0}</div></div>
+          <div class="stat" style="padding:10px;"><div class="mini">Note moy.</div><div class="value-sm">${qk.avgScore !== null && qk.avgScore !== undefined ? qk.avgScore + '%' : '-'}</div>${qk.avgScore !== null ? renderProgress(qk.avgScore, qk.avgScore >= 50 ? 'progress-green' : 'progress-red') : ''}</div>
+          <div class="stat" style="padding:10px;"><div class="mini">Taux réussite</div><div class="value-sm">${qk.passRate !== null && qk.passRate !== undefined ? qk.passRate + '%' : '-'}</div>${qk.passRate !== null ? renderProgress(qk.passRate, qk.passRate >= 50 ? 'progress-green' : 'progress-amber') : ''}</div>
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:var(--muted);">${qk.graded || 0} corrigés, ${qk.pdfGenerated || 0} PDF générés</div>
+      </div>`);
+
+      // Card 3: Productivity indicators
+      const avgSignDelay = computeAvgSignDelay(rows);
+      kpiHtml.push(`<div class="card glass-card">
+        <div class="mini" style="margin-bottom:8px;font-weight:700;">Productivité</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="stat stat-green" style="padding:10px;"><div class="mini">Taux complétion</div><div class="value-sm">${pctDone}%</div>${renderProgress(pctDone, 'progress-green')}</div>
+          <div class="stat stat-blue" style="padding:10px;"><div class="mini">PDF restants</div><div class="value-sm">${total - pdfGenerated}</div></div>
+          <div class="stat" style="padding:10px;"><div class="mini">Sign. manquantes</div><div class="value-sm">${(total - signedInter) + (total - signedAgent)}</div></div>
+          <div class="stat" style="padding:10px;"><div class="mini">Délai moy. sign.</div><div class="value-sm">${avgSignDelay}</div></div>
+        </div>
+      </div>`);
+
+      document.getElementById('dashboardKpiGrid').innerHTML = kpiHtml.join('');
+
+      /* ── Team bar chart ── */
+      const teams = state.teamKpis || [];
+      let teamChartHtml = '';
+      if (teams.length > 0) {
+        const maxTeam = Math.max(...teams.map(t => t.total), 1);
+        teamChartHtml = `<div class="card glass-card">
+          <div class="mini" style="margin-bottom:8px;font-weight:700;">Suivi par sous-équipe</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div class="mini" style="margin-bottom:4px;">Complétude signature</div>
+              ${renderBarChart(teams.map(t => ({
+                label: t.name,
+                value: t.total ? Math.round((t.signInterOk + t.signAgentOk) / (t.total * 2) * 100) : 0
+              })), 100, function(item) { return item.value >= 75 ? '#4ade80' : item.value >= 50 ? '#facc15' : '#d96a63'; })}
+            </div>
+            <div>
+              <div class="mini" style="margin-bottom:4px;">PDF générés par équipe</div>
+              ${renderBarChart(teams.map(t => ({
+                label: t.name,
+                value: t.pdfOk
+              })), maxTeam, function() { return 'var(--gold)'; })}
+            </div>
+          </div>
+          <div class="table-wrap" style="margin-top:12px;">
+            <table>
+              <thead><tr><th>Sous-équipe</th><th>Total</th><th>PDF</th><th>Sign. inter.</th><th>Sign. agent</th><th>Complétion</th></tr></thead>
+              <tbody>${teams.map(t => {
+                const comp = t.total ? Math.round((t.pdfOk + t.signInterOk + t.signAgentOk) / (t.total * 3) * 100) : 0;
+                return `<tr>
+                  <td>${escapeHtml(t.name)}</td>
+                  <td>${t.total}</td>
+                  <td>${t.pdfOk} / ${t.total}</td>
+                  <td>${t.signInterOk} / ${t.total}</td>
+                  <td>${t.signAgentOk} / ${t.total}</td>
+                  <td>${comp}% ${renderProgress(comp, comp >= 75 ? 'progress-green' : comp >= 50 ? 'progress-amber' : 'progress-red')}</td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }
+      document.getElementById('dashboardTeamChart').innerHTML = teamChartHtml;
+
+      /* ── Main table ── */
       document.getElementById('dashboardBody').innerHTML = rows.map(row => `
         <tr>
           <td>${escapeHtml(row.matricule || '')}</td>
@@ -1363,6 +1530,28 @@
           </td>
         </tr>
       `).join('') || '<tr><td colspan="10" class="mini" style="text-align:center;padding:24px;">Aucune donnée pour cette période. Générez des PDF depuis l\'onglet Génération.</td></tr>';
+    }
+
+    /* ── Helper: compute average signature delay ── */
+    function computeAvgSignDelay(rows) {
+      let count = 0, totalDays = 0;
+      rows.forEach(r => {
+        if (r.signatureIntervenantAt && r.dateSession) {
+          const ds = parseSimpleDate(r.dateSession);
+          const si = parseSimpleDate(r.signatureIntervenantAt);
+          if (ds && si) { totalDays += Math.max(0, (si - ds) / 86400000); count++; }
+        }
+      });
+      if (!count) return '-';
+      const avg = Math.round(totalDays / count);
+      return avg <= 1 ? avg + 'j' : avg + 'j';
+    }
+
+    function parseSimpleDate(str) {
+      if (!str) return null;
+      const m = String(str).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+      return null;
     }
 
     function renderBadge(status, type) {
@@ -1434,6 +1623,7 @@
             ${row.canSignAgent ? `<button class="btn-secondary" style="font-size:13px;" onclick="signFromRow(${row.rowNumber}, 'agent')">✍️ Signer (Ambassadeur)</button>` : ''}
             ${isAdminRole && row.statutSignatureAgent !== 'Signé' ? (row.signTokenAgent ? `<span class="pill pill-muted" style="font-size:11px;">Token: ${escapeHtml(row.signTokenAgent)}</span>` : `<button class="btn-secondary" style="font-size:12px;" onclick="adminGenerateSignToken(${row.rowNumber})">🔑 Token agent</button>`) : ''}
             ${row.pdfUrl ? `<a class="btn-secondary" style="font-size:12px;padding:8px 12px;text-decoration:none;border-radius:12px;" href="${escapeAttr(row.pdfUrl)}" target="_blank">📄 PDF</a>` : ''}
+            ${isAdminRole && row.rowNumber ? `<button class="btn-secondary" style="font-size:12px;" onclick="adminRegeneratePdf(${row.rowNumber})">🔄 Régénérer</button>` : ''}
           </div>
         </div>
       `).join('') || '<div class="signature-card" style="text-align:center;padding:24px;"><span class="mini">Aucune fiche à signer sur cette période. Vérifiez le mois sélectionné ou générez des PDF.</span></div>';
@@ -2215,6 +2405,7 @@
             <div class="toolbar" style="gap:4px;">
               <button class="btn-secondary" style="padding:4px 8px;" onclick="openQuizGradeModal('${escapeJs(r.reponseId)}')">Corriger</button>
               ${!hasPdf ? `<button class="btn-secondary" style="padding:4px 8px;" onclick="adminGenerateQuizPdf('${escapeJs(r.reponseId)}')">PDF</button>` : `<a href="${escapeAttr(r.pdfUrl)}" target="_blank" class="btn-secondary" style="padding:4px 8px;text-decoration:none;">Voir PDF</a>`}
+              ${hasPdf ? `<button class="btn-secondary" style="padding:4px 8px;" onclick="adminGenerateQuizPdf('${escapeJs(r.reponseId)}')">Régénérer PDF</button>` : ''}
               ${hasPdf && !isLinked ? `<button class="btn-secondary" style="padding:4px 8px;" onclick="adminLinkQuizToTracking('${escapeJs(r.reponseId)}')">Lier émargement</button>` : ''}
               ${isLinked ? '<span class="pill pill-success">Lié</span>' : ''}
             </div>
@@ -2368,6 +2559,28 @@
         state.quizSessions.map(s =>
           `<option value="${escapeAttr(s.sessionId)}">${escapeHtml(s.titre || s.sessionId)}</option>`
         ).join('');
+    }
+
+    // ══════════════════════════════════════════════
+    // ██  Régénération PDF (admin)
+    // ══════════════════════════════════════════════
+
+    async function adminRegeneratePdf(rowNumber) {
+      if (!confirm('Régénérer le PDF pour cette fiche ?')) return;
+      const btn = event && event.target;
+      await withButtonLock(btn, async () => {
+        try {
+          showLoading(true, 'Régénération du PDF…');
+          const res = await rpc('regenerateTrackingPdf', state.token, rowNumber);
+          showLoading(false);
+          showToast('PDF régénéré avec succès.', 'success');
+          await loadDashboard();
+          await loadSignatureQueue();
+        } catch (err) {
+          showLoading(false);
+          showToast(err.message, 'error');
+        }
+      });
     }
 
     // ══════════════════════════════════════════════
