@@ -955,6 +955,32 @@ function renderSignatureBlocks_(doc, record) {
 
 function renderIntervenantBlock_(doc, record) {
   const body = doc.getBody();
+
+  // D'abord chercher le marker INTERVENANT directement (quiz PDFs)
+  var markerResult = body.findText(escapeRegex_(APP.MARKERS.INTERVENANT));
+  if (markerResult) {
+    var markerCell = getParentCell_(markerResult.getElement());
+    if (markerCell) {
+      clearTableCell_(markerCell);
+      // userId en haut
+      var pUser = markerCell.appendParagraph(String(record.intervenantUserId || '').trim());
+      pUser.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      pUser.setSpacingBefore(6).setSpacingAfter(0);
+      pUser.editAsText().setFontSize(10).setBold(true);
+      // Signature image si signé
+      if (record.statutSignatureIntervenant === APP.STATUS.SIGNED) {
+        var inserted = insertSignatureImageInCell_(markerCell, buildIntervenantSignatureImageModel_(record), true);
+        if (inserted) appendSignatureCaption_(markerCell, buildIntervenantSignatureCaption_(record), true);
+        if (record.commentaireIntervenant) {
+          appendSignatureComment_(markerCell, record.commentaireIntervenant);
+        }
+      }
+      appendHiddenMarker_(markerCell, APP.MARKERS.INTERVENANT);
+      return;
+    }
+  }
+
+  // Fallback : chercher via header de table (attendance PDFs classiques)
   const anchors = findIntervenantCells_(body);
   if (!anchors || !anchors.labelCell) return;
 
@@ -973,9 +999,8 @@ function renderIntervenantBlock_(doc, record) {
   if (signatureCell && signatureCell !== labelCell) {
     clearTableCell_(signatureCell);
     if (record.statutSignatureIntervenant === APP.STATUS.SIGNED) {
-      const inserted = insertSignatureImageInCell_(signatureCell, buildIntervenantSignatureImageModel_(record), true);
-      if (inserted) appendSignatureCaption_(signatureCell, buildIntervenantSignatureCaption_(record), true);
-      // Ajouter le commentaire de l'intervenant sous la signature
+      const inserted2 = insertSignatureImageInCell_(signatureCell, buildIntervenantSignatureImageModel_(record), true);
+      if (inserted2) appendSignatureCaption_(signatureCell, buildIntervenantSignatureCaption_(record), true);
       if (record.commentaireIntervenant) {
         appendSignatureComment_(signatureCell, record.commentaireIntervenant);
       }
@@ -2555,10 +2580,10 @@ function appendSignatureTableIfMissing_(body) {
 }
 
 /**
- * Prépare les signatures pour un PDF quiz :
- * - Cell 0 (Intervenant/Formateur) : login userId + marker INTERVENANT
- * - Cell 1 (Participant/Évalué)    : "Vu et visé par [nom]" + marker AGENT
- * - Dates en dessous remplies avec la date de session
+ * Prépare les ancres de signature pour un PDF quiz (avant émargement) :
+ * - Cell 0 (Intervenant/Formateur) : placeholder + marker INTERVENANT
+ * - Cell 1 (Participant/Évalué)    : placeholder + marker AGENT
+ * Les signatures réelles sont rendues par renderSignatureBlocks_ lors de l'émargement.
  */
 function prepareQuizSignatures_(doc, userId, participantName, dateSessionFr) {
   var body = doc.getBody();
@@ -2583,41 +2608,24 @@ function prepareQuizSignatures_(doc, userId, participantName, dateSessionFr) {
 
   var sigRow = sigTable.getRow(1);
 
-  // ── Cell 0 : Intervenant / Formateur ──
+  // ── Cell 0 : Intervenant / Formateur — marker invisible seulement ──
   var cellInter = sigRow.getCell(0);
   clearTableCell_(cellInter);
-  // Login ID en haut
-  var pId = cellInter.appendParagraph(String(userId || '').trim());
-  pId.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  pId.editAsText().setFontSize(8).setBold(false).setItalic(false);
-  // Marker invisible pour la signature intervenant
+  var pPlaceholder0 = cellInter.appendParagraph('(espace signature)');
+  pPlaceholder0.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  pPlaceholder0.editAsText().setFontSize(8).setItalic(true).setForegroundColor('#cccccc');
   appendHiddenMarker_(cellInter, APP.MARKERS.INTERVENANT);
 
-  // ── Cell 1 : Participant / Évalué ──
+  // ── Cell 1 : Participant / Évalué — marker invisible seulement ──
   var cellPart = sigRow.getCell(1);
   clearTableCell_(cellPart);
-  // "Vu et visé par [nom]"
-  var mention = 'Vu et visé par ' + (participantName || 'l\'évalué');
-  var pVise = cellPart.appendParagraph(mention);
-  pVise.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  pVise.editAsText().setFontSize(8).setBold(false).setItalic(true).setForegroundColor('#333333');
-  // Marker invisible pour la signature participant (agent)
+  var pPlaceholder1 = cellPart.appendParagraph('(espace signature)');
+  pPlaceholder1.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  pPlaceholder1.editAsText().setFontSize(8).setItalic(true).setForegroundColor('#cccccc');
   appendHiddenMarker_(cellPart, APP.MARKERS.AGENT);
 
-  // ── Remplir les dates en dessous du tableau ──
-  var tableIndex = body.getChildIndex(sigTable);
-  var numChildren = body.getNumChildren();
-  for (var i = tableIndex + 1; i < numChildren && i < tableIndex + 4; i++) {
-    var child = body.getChild(i);
-    if (child.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
-    var txt = String(child.asParagraph().getText() || '');
-    if (txt.indexOf('Date') !== -1 && txt.indexOf('____') !== -1) {
-      var dateStr = dateSessionFr || '____/____/________';
-      child.asParagraph().setText('Date : ' + dateStr + '                         Date : ' + dateStr);
-      child.asParagraph().editAsText().setFontSize(8).setForegroundColor('#333333');
-      break;
-    }
-  }
+  // ── Les dates restent vides — seront remplies à la signature ──
+  // (pas de modification ici, dates = ____/____/________ par défaut)
 }
 
 // ── Rattachement quiz au module émargement/tracking ──
