@@ -2430,19 +2430,34 @@ function replaceQuizQuestionsFormatted_(body, answers) {
   // Trouver le paragraphe contenant le placeholder
   var element = found.getElement();
   var parent = element.getParent();
+  // Remonter jusqu'au niveau enfant direct du body
+  while (parent.getParent() && parent.getParent().getType() !== DocumentApp.ElementType.BODY_SECTION) {
+    parent = parent.getParent();
+  }
   var parentIndex = body.getChildIndex(parent);
 
-  // Supprimer le paragraphe placeholder
-  body.removeChild(parent);
+  // Vider le paragraphe placeholder au lieu de le supprimer (évite l'erreur "dernier paragraphe")
+  if (parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
+    parent.asParagraph().clear();
+  }
 
-  // Insérer les questions formatées à la même position
-  var insertIdx = parentIndex;
+  // Insérer les questions formatées après le placeholder vidé
+  var insertIdx = parentIndex + 1;
+  var firstInserted = false;
 
   answers.forEach(function(a, idx) {
     var typeLabel = a.type === 'qcm' ? 'QCM' : a.type === 'vrai_faux' ? 'Vrai/Faux' : a.type === 'reponse_courte' ? 'Réponse courte' : 'Texte libre';
+    var titleText = 'Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) — ' + typeLabel;
 
-    // Titre question : gras + italique
-    var qTitle = body.insertParagraph(insertIdx++, 'Q' + (idx + 1) + ' (' + (a.points || 1) + 'pt) — ' + typeLabel);
+    // Réutiliser le paragraphe vidé pour le premier titre, sinon insérer
+    var qTitle;
+    if (!firstInserted && parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      parent.asParagraph().setText(titleText);
+      qTitle = parent.asParagraph();
+      firstInserted = true;
+    } else {
+      qTitle = body.insertParagraph(insertIdx++, titleText);
+    }
     qTitle.editAsText().setBold(true).setItalic(true).setFontSize(10).setForegroundColor('#1a1a2e');
     qTitle.setSpacingBefore(10).setSpacingAfter(2);
 
